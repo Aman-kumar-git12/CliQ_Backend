@@ -1,0 +1,11 @@
+# Node modules
+node_modules/
+
+# Environment variables
+.env
+
+# Prisma schema file
+prisma/schema.prisma
+
+# Notes file
+notes.md
