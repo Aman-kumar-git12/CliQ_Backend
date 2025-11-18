@@ -5,10 +5,13 @@ const { authUserRoutes } = require("./auth/auth");
 const { ProfileRoute } = require("./profile/profile");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
+const dotenv =  require('dotenv')
+dotenv.config()
+
 
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: "http://localhost:5173 || process.env.FRONTEND_URL",
     credentials: true,
   })
 );
