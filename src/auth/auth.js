@@ -1,7 +1,7 @@
 const express = require("express");
 const { prisma } = require("../../prisma/prismaClient");
 const authUserRoutes = express.Router();
-const { ValidationSignupData } = require("./validation");
+const { ValidationSignupData } = require("./middleware");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
@@ -22,24 +22,41 @@ authUserRoutes.post("/signup", async (req, res) => {
     if (existingUser) {
       return res.status(400).json({ message: "User already exists" });
     }
+
     const user = await prisma.users.create({
       data: {
         firstname,
         lastname,
         email,
-        age,
+        age: parseInt(age),
         password: passwordHash,
       },
     });
+
+    // generate jwt token
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      process.env.JWT_SECRET_KEY,
+      { expiresIn: "24h" }
+    );
+
+    // set cookie
+    res.cookie("auth_token", token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+      maxAge: 24 * 60 * 60 * 1000,
+    });
+
     // console.log(user);
     res.json({ message: "User created successfully", user });
   } catch (err) {
+    // console.error(err);
     res
       .status(500)
       .json({ message: "Internal server error", error: err.message });
   }
 });
-
 
 // login route
 authUserRoutes.post("/login", async (req, res) => {
@@ -51,14 +68,13 @@ authUserRoutes.post("/login", async (req, res) => {
       where: { email },
     });
     if (!user) {
-      return res.json({ message: "User not found" });
+      throw new Error("User not found");
     }
-
 
     // verify password
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
-      return res.json({ message: "Invalid password" });
+      throw new Error("Invalid password");
     }
 
     // generate jwt token
@@ -70,14 +86,15 @@ authUserRoutes.post("/login", async (req, res) => {
 
     // set cookie
     res.cookie("auth_token", token, {
-      expires: new Date(Date.now() + 24 * 3600000),
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+      maxAge: 24 * 60 * 60 * 1000,
     });
 
     return res.send({ message: "Login successful", user });
   } catch (err) {
-    console.log(err)
     res.status(500).json({
-
       message: "Internal server error",
       error: err.message,
       stack: err.stack,

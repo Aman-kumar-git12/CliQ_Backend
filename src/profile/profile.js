@@ -44,7 +44,7 @@ ProfileRoute.patch("/profile/edit", userAuth, async (req, res) => {
       updateData.password = hashedPassword;
     }
 
-    console.log(updateData);
+    // console.log(updateData);
 
     const data = await prisma.users.update({
       where: { id: loggedInUser.id },
