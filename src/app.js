@@ -11,7 +11,7 @@ dotenv.config()
 
 app.use(
   cors({
-    origin: "http://localhost:5173 || process.env.FRONTEND_URL",
+    origin: process.env.FRONTEND_URL,
     credentials: true,
   })
 );
@@ -23,10 +23,14 @@ app.use("/", authUserRoutes);
 app.use("/", ProfileRoute);
 
 // checking server
+
+
 app.get("/users", async (req, res) => {
   const users = await prisma.user.findMany();
   res.json(users);
 });
+
+
 
 app.listen(2000, (err) => {
   console.log("Server is running on port 2000");
