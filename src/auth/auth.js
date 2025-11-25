@@ -91,7 +91,7 @@ authUserRoutes.post("/login", async (req, res) => {
       sameSite: "strict",
       maxAge: 24 * 60 * 60 * 1000,
     });
-    console.log(user)
+
     return res.send({ message: "Login successful", user });
   } catch (err) {
     res.status(500).json({

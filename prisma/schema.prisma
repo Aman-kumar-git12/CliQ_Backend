@@ -15,11 +15,63 @@ datasource db {
 
 model Users {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  firstname String 
-  lastname  String  
+  firstname String
+  lastname  String
   email     String   @unique
   age       Int
   password  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+
+  sentRequests     ConnectionsRequest[] @relation("sentRequests")
+  receivedRequests ConnectionsRequest[] @relation("receivedRequests")
+  comments         Comment[]
+  posts Post[]
 }
+
+enum ConnectionStatus {
+  ignored
+  interested
+  rejected
+  accepted
+}
+
+model ConnectionsRequest {
+  id          String           @id @default(auto()) @map("_id") @db.ObjectId
+  fromUserId  String           @db.ObjectId
+  toUserId    String           @db.ObjectId
+  status      ConnectionStatus @default(interested)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  fromUser Users @relation("sentRequests", fields: [fromUserId], references: [id] , onDelete: Cascade)
+  toUser   Users @relation("receivedRequests", fields: [toUserId], references: [id], onDelete: Cascade)
+}
+
+model Post {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  content   String
+  image     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String @db.ObjectId
+  user   Users @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  comments Comment[]
+}
+
+model Comment {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  comment   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String @db.ObjectId
+  user   Users @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  postId String @db.ObjectId
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+}
+  
