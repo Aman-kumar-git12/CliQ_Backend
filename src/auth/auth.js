@@ -6,6 +6,35 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
 // signup route
+authUserRoutes.get("/auth/me", async (req, res) => {
+  try {
+    const token = req.cookies.auth_token;
+
+    if (!token) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY);
+
+    const user = await prisma.users.findUnique({
+      where: { id: decoded.userId },
+      select: {
+        id: true,
+        firstname: true,
+        lastname: true,
+        email: true,
+        age: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return res.json({ user });
+  } catch (err) {
+    return res.status(401).json({ message: "Invalid token" });
+  }
+});
+
 authUserRoutes.post("/signup", async (req, res) => {
   try {
     // data validation

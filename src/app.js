@@ -6,8 +6,9 @@ const { ProfileRoute } = require("./profile/profile");
 const { requestRouter } = require("./userConnection/request");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
-const dotenv =  require('dotenv');
+const dotenv = require('dotenv');
 const { userRoute } = require("./userConnection/user");
+const { searchRoute } = require("./findPeople/search");
 const { postRoute } = require("./post/post");
 dotenv.config()
 
@@ -24,9 +25,10 @@ app.use(express.json());
 
 app.use("/", authUserRoutes);
 app.use("/", ProfileRoute);
-app.use("/" ,requestRouter)
-app.use('/' , userRoute)
-app.use('/' , postRoute)
+app.use("/", requestRouter)
+app.use('/', userRoute)
+app.use('/', postRoute)
+app.use('/', searchRoute)
 
 
 // checking server
@@ -39,6 +41,6 @@ app.get("/users", async (req, res) => {
 
 
 
-app.listen(2000, (err) => {
-  console.log("Server is running on port 2000");
+app.listen(2001, (err) => {
+  console.log("Server is running on port 2001");
 });

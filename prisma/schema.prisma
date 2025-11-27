@@ -20,6 +20,7 @@ model Users {
   email     String   @unique
   age       Int
   password  String
+  imageUrl  String? @default("https://cyber.comolho.com/static/img/avatar.png")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

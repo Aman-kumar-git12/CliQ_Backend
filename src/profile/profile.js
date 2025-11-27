@@ -19,20 +19,20 @@ ProfileRoute.get("/profile", userAuth, async (req, res) => {
 });
 
 // edit profile route
-ProfileRoute.patch("/profile/edit", userAuth, async (req, res) => {
+ProfileRoute.put("/profile/edit", userAuth, async (req, res) => {
   try {
-    if (!ValidationFields(req)) {
-      throw new Error("Invalid Edits Fields");
-    }
 
     const loggedInUser = req.user;
 
     const updateData = {};
 
     // updating fields
-    Object.keys(req.body).forEach(async (field) => {
-      {
-        if (field !== "password") {
+    // updating fields
+    Object.keys(req.body).forEach((field) => {
+      if (field !== "password") {
+        if (field === "age") {
+          updateData[field] = parseInt(req.body[field]);
+        } else {
           updateData[field] = req.body[field];
         }
       }
@@ -52,6 +52,7 @@ ProfileRoute.patch("/profile/edit", userAuth, async (req, res) => {
     });
     res.json({ message: "Profile updated successfully", user: data });
   } catch (err) {
+    console.log(err)
     res
       .status(500)
       .json({ message: "Internal server error", error: err.message });
