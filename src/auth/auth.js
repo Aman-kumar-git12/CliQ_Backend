@@ -90,6 +90,7 @@ authUserRoutes.post("/signup", async (req, res) => {
 // login route
 authUserRoutes.post("/login", async (req, res) => {
   try {
+    console.log("Hii from login")
     const { email, password } = req.body;
 
     // check email existence
