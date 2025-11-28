@@ -3,12 +3,14 @@ const postRoute = express.Router()
 const { userAuth } = require('../userConnection/auth')
 const { prisma } = require("../../prisma/prismaClient");
 const { ValidatePost, ValidatePostUpdate, ValidatePostDelete } = require('./middleware')
+const cloudinary = require('../upload/cloudinary');
+const upload = require('../upload/upload');
 
 
 // all the posts of users 
 postRoute.get('/user/post', userAuth, async (req, res) => {
     try {
-    
+
         const posts = await prisma.post.findMany()
         console.log(posts)
         res.json(posts)
@@ -49,7 +51,7 @@ postRoute.get('/user/post/:postId', userAuth, async (req, res) => {
         console.log(postId)
         const posts = await prisma.post.findUnique({
             where: {
-                id : postId
+                id: postId
             }
         })
         res.json(posts)
@@ -99,34 +101,44 @@ postRoute.get('/user/post/comments/:postId', userAuth, async (req, res) => {
 
 
 // just create Post 
-postRoute.post('/create/post', userAuth, async (req, res) => {
+postRoute.post("/create/post", userAuth, upload.single("image"), async (req, res) => {
     try {
-        const { content, image } = req.body;
-        const { id } = req.user;
-        console.log(req.body)
+        const { content } = req.body;
 
+        let imageUrl = null;
 
+        // If user uploaded image, upload to Cloudinary
+        // If user uploaded image, upload to Cloudinary
+        if (req.file) {
+            const uploadPromise = new Promise((resolve, reject) => {
+                const stream = cloudinary.uploader.upload_stream(
+                    { folder: "posts" },
+                    (error, result) => {
+                        if (error) reject(error);
+                        else resolve(result);
+                    }
+                );
+                stream.end(req.file.buffer);
+            });
 
-        ValidatePost(req)
+            const result = await uploadPromise;
+            imageUrl = result.secure_url;
+        }
+
         const post = await prisma.post.create({
             data: {
-                userId: id,
                 content,
-                image
-            }
-        })
+                image: imageUrl,
+                userId: req.user.id,
+            },
+        });
 
-
-        res.json({
-            message: "Post created successfully",
-            post
-        })
+        res.json(post);
     } catch (error) {
-        console.log(error)
-        res.status(500).json({ message: "Internal Server Error", error: error.message })
+        console.log(error);
+        res.status(500).json({ message: "Internal Server Error" });
     }
-})
-
+});
 
 // delete post by post id 
 postRoute.delete('/delete/post/:postId', userAuth, async (req, res) => {
@@ -136,7 +148,7 @@ postRoute.delete('/delete/post/:postId', userAuth, async (req, res) => {
 
         const post = await prisma.post.findUnique({
             where: {
-                id : postId
+                id: postId
             }
         })
 
@@ -146,7 +158,7 @@ postRoute.delete('/delete/post/:postId', userAuth, async (req, res) => {
 
         const deletedPost = await prisma.post.delete({
             where: {
-                id : postId
+                id: postId
             }
         })
 
@@ -170,7 +182,7 @@ postRoute.put('/update/post/:postId', userAuth, async (req, res) => {
 
         const post = await prisma.post.findUnique({
             where: {
-                id : postId
+                id: postId
             }
         })
 
@@ -181,7 +193,7 @@ postRoute.put('/update/post/:postId', userAuth, async (req, res) => {
         // only content will change
         const updatedPost = await prisma.post.update({
             where: {
-                id : postId
+                id: postId
             },
             data: {
                 content: req.body.content

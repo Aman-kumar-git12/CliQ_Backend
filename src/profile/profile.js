@@ -3,6 +3,8 @@ const express = require("express");
 const ProfileRoute = express.Router();
 const { ValidationFields } = require("./validation");
 const { prisma } = require("../../prisma/prismaClient");
+const upload = require("../upload/upload")
+const cloudinary = require("../upload/cloudinary")
 
 const bcrypt = require("bcrypt");
 
@@ -93,6 +95,48 @@ ProfileRoute.delete("/profile/delete", userAuth, async (req, res) => {
       .json({ message: "Internal server error", error: err.message });
   }
 });
+
+
+ProfileRoute.put(
+  "/profile/image",
+  userAuth,
+  upload.single("image"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No image file uploaded" });
+      }
+
+      // Upload to Cloudinary
+      const uploadPromise = new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { folder: "profile_images" },
+          (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+          }
+        );
+        stream.end(req.file.buffer);
+      });
+
+      const uploadedImage = await uploadPromise;
+
+      // Update DB
+      const user = await prisma.users.update({
+        where: { id: req.user.id },
+        data: { imageUrl: uploadedImage.secure_url },
+      });
+
+      res.json({
+        message: "Profile image updated",
+        imageUrl: user.imageUrl,
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: "Internal Server Error", error: error.message });
+    }
+  }
+);
 
 
 

@@ -1,3 +1,6 @@
+const dotenv = require('dotenv');
+const dotenvResult = dotenv.config();
+
 const express = require("express");
 const app = express();
 const { prisma } = require("../prisma/prismaClient");
@@ -6,11 +9,12 @@ const { ProfileRoute } = require("./profile/profile");
 const { requestRouter } = require("./userConnection/request");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
-const dotenv = require('dotenv');
 const { userRoute } = require("./userConnection/user");
 const { searchRoute } = require("./findPeople/search");
 const { postRoute } = require("./post/post");
-dotenv.config()
+
+
+
 
 
 app.use(
@@ -21,7 +25,9 @@ app.use(
 );
 
 app.use(cookieParser());
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
 
 app.use("/", authUserRoutes);
 app.use("/", ProfileRoute);
