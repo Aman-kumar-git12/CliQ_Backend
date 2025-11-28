@@ -5,10 +5,12 @@ const { prisma } = require("../../prisma/prismaClient");
 const { ValidatePost, ValidatePostUpdate, ValidatePostDelete } = require('./middleware')
 
 
-
+// all the posts of users 
 postRoute.get('/user/post', userAuth, async (req, res) => {
     try {
+    
         const posts = await prisma.post.findMany()
+        console.log(posts)
         res.json(posts)
     } catch (error) {
         console.log(error)
@@ -17,12 +19,37 @@ postRoute.get('/user/post', userAuth, async (req, res) => {
 })
 
 
-postRoute.get('/user/post/:userId', userAuth, async (req, res) => {
+// posts by userId
+postRoute.get('/user/posts/:userId', userAuth, async (req, res) => {
     try {
         const { userId } = req.params;
+
         const posts = await prisma.post.findMany({
             where: {
-                userId
+                userId: userId,   // filter posts for this user
+            },
+            orderBy: {
+                createdAt: 'desc',
+            }
+        });
+
+        res.json(posts);
+
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: "Internal Server Error", error: error.message });
+    }
+});
+
+
+// post by postId 
+postRoute.get('/user/post/:postId', userAuth, async (req, res) => {
+    try {
+        const { postId } = req.params;
+        console.log(postId)
+        const posts = await prisma.post.findUnique({
+            where: {
+                id : postId
             }
         })
         res.json(posts)
@@ -70,6 +97,8 @@ postRoute.get('/user/post/comments/:postId', userAuth, async (req, res) => {
     }
 })
 
+
+// just create Post 
 postRoute.post('/create/post', userAuth, async (req, res) => {
     try {
         const { content, image } = req.body;
@@ -98,14 +127,16 @@ postRoute.post('/create/post', userAuth, async (req, res) => {
     }
 })
 
-postRoute.delete('/delete/post/:id', userAuth, async (req, res) => {
+
+// delete post by post id 
+postRoute.delete('/delete/post/:postId', userAuth, async (req, res) => {
     try {
-        const { id } = req.params;
+        const { postId } = req.params;
         ValidatePostDelete(req)
 
         const post = await prisma.post.findUnique({
             where: {
-                id
+                id : postId
             }
         })
 
@@ -115,7 +146,7 @@ postRoute.delete('/delete/post/:id', userAuth, async (req, res) => {
 
         const deletedPost = await prisma.post.delete({
             where: {
-                id
+                id : postId
             }
         })
 
@@ -129,14 +160,17 @@ postRoute.delete('/delete/post/:id', userAuth, async (req, res) => {
     }
 })
 
-postRoute.patch('/update/post/:id', userAuth, async (req, res) => {
+
+// update post by postid
+postRoute.put('/update/post/:postId', userAuth, async (req, res) => {
     try {
-        const { id } = req.params;
+        const { postId } = req.params;
+        console.log(postId)
         ValidatePostUpdate(req)
 
         const post = await prisma.post.findUnique({
             where: {
-                id
+                id : postId
             }
         })
 
@@ -147,7 +181,7 @@ postRoute.patch('/update/post/:id', userAuth, async (req, res) => {
         // only content will change
         const updatedPost = await prisma.post.update({
             where: {
-                id
+                id : postId
             },
             data: {
                 content: req.body.content

@@ -20,8 +20,8 @@ const ValidatePostUpdate = (req) => {
 }
 
 const ValidatePostDelete = (req) => {
-    const { id } = req.params;
-    if (!id) {
+    const { postId } = req.params;
+    if (!postId) {
         throw new Error("Id is required")
     }  
 }
