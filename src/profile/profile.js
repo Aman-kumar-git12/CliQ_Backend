@@ -59,5 +59,42 @@ ProfileRoute.put("/profile/edit", userAuth, async (req, res) => {
   }
 });
 
+ProfileRoute.delete("/profile/delete", userAuth, async (req, res) => {
+  try {
+    const loggedInUser = req.user;
+
+    // Check if user exists
+    const user = await prisma.users.findUnique({
+      where: { id: loggedInUser.id },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Delete user
+    await prisma.users.delete({
+      where: { id: loggedInUser.id },
+    });
+
+    // 🔥 Clear authentication cookie after deleting
+    res.clearCookie("auth_token", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none"
+    });
+
+    return res.json({ message: "Profile deleted successfully" });
+
+  } catch (err) {
+    console.log(err);
+    return res
+      .status(500)
+      .json({ message: "Internal server error", error: err.message });
+  }
+});
+
+
+
 
 module.exports = { ProfileRoute };

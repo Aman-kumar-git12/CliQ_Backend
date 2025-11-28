@@ -90,7 +90,7 @@ authUserRoutes.post("/signup", async (req, res) => {
 // login route
 authUserRoutes.post("/login", async (req, res) => {
   try {
-    console.log("Hii from login")
+    console.log("Hii from login");
     const { email, password } = req.body;
 
     // check email existence
@@ -133,7 +133,12 @@ authUserRoutes.post("/login", async (req, res) => {
 });
 
 authUserRoutes.post("/logout", (req, res) => {
-  res.clearCookie("auth_token");
+  res.clearCookie("auth_token", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none"
+  });
+
   res.json({ message: "Logout successful" });
 });
 
