@@ -140,5 +140,66 @@ ProfileRoute.put(
 
 
 
+// post experties 
+ProfileRoute.put("/profile/expertise", userAuth, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        console.log(userId)
+        const {
+            name,
+            description,
+            experience,
+            skills,
+            projects,
+            achievements,
+            interests,
+            aboutYou,
+            details,
+            format
+        } = req.body;
+
+        // If field is empty → convert to "****"
+        const expertiseObj = {
+            name: name || "****",
+            description: description || "****",
+            experience: experience || "****",
+            skills: skills?.length ? skills : ["****"],
+            projects: projects || "****",
+            achievements: achievements || "****",
+            interests: interests || "****",
+            aboutYou: aboutYou || "****",
+            details: {
+                email: details?.email || "****",
+                address: details?.address || "****",
+            },
+            format: format || 1,
+            updatedAt: new Date()
+        };
+
+
+        // Save Expertise
+        const updatedUser = await prisma.users.update({
+            where: { id: userId },
+            data: {
+                expertise: expertiseObj
+            }
+        });
+
+        return res.json({
+            message: "Expertise saved successfully",
+            expertise: updatedUser.expertise
+        });
+
+    } catch (error) {
+        console.log("Expertise Error:", error);
+        return res.status(500).json({
+            message: "Internal Server Error",
+            error: error.message
+        });
+    }
+});
+
+
+
 
 module.exports = { ProfileRoute };

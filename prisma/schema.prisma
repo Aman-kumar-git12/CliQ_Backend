@@ -21,6 +21,7 @@ model Users {
   age       Int
   password  String
   imageUrl  String? @default("https://cyber.comolho.com/static/img/avatar.png")
+  expertise Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
