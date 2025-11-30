@@ -50,3 +50,5 @@ app.get("/users", async (req, res) => {
 app.listen(2001, (err) => {
   console.log("Server is running on port 2001");
 });
+
+module.exports = app;

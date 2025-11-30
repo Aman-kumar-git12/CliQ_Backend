@@ -98,6 +98,7 @@ authUserRoutes.post("/login", async (req, res) => {
       where: { email },
     });
     if (!user) {
+      console.log("User not found");
       throw new Error("User not found");
     }
 
