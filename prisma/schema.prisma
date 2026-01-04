@@ -30,6 +30,10 @@ model Users {
   receivedRequests ConnectionsRequest[] @relation("receivedRequests")
   comments         Comment[]
   posts Post[]
+
+  conversationsIds String[] @db.ObjectId
+  conversations Conversation[] @relation(fields: [conversationsIds], references: [id])
+  messages      Message[]
 }
 
 enum ConnectionStatus {
@@ -77,3 +81,43 @@ model Comment {
   post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
 }
   
+
+model Conversation {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  isGroup   Boolean  @default(false)
+  name      String?
+  image     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participantIds String[] @db.ObjectId
+  participants   Users[]  @relation(fields: [participantIds], references: [id])
+  
+  messages     Message[]
+}
+
+enum MessageStatus {
+  sent
+  delivered
+  seen
+}
+
+model Message {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  text          String?
+  image         String?
+  file          String?
+  isDelete      Boolean @default(false)
+
+  status        MessageStatus @default(sent)
+
+  conversationId String @db.ObjectId
+  senderId       String @db.ObjectId
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       Users        @relation(fields: [senderId], references: [id], onDelete: Cascade)
+}

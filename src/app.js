@@ -12,8 +12,12 @@ const cors = require("cors");
 const { userRoute } = require("./userConnection/user");
 const { searchRoute } = require("./findPeople/search");
 const { postRoute } = require("./post/post");
+const { myconnectionRoutes } = require("./myconnection/myconnection");
+const { chatRoutes } = require("./socket/chat");
 
-
+// socket 
+const http = require("http");
+const { initialiseSocket } = require("./socket/socket");
 
 
 
@@ -35,9 +39,14 @@ app.use("/", requestRouter)
 app.use('/', userRoute)
 app.use('/', postRoute)
 app.use('/', searchRoute)
+app.use('/', myconnectionRoutes)
+app.use('/', chatRoutes)
 
 
-// checking server
+// socket code
+const server = http.createServer(app);
+initialiseSocket(server)
+
 
 
 app.get("/users", async (req, res) => {
@@ -47,8 +56,8 @@ app.get("/users", async (req, res) => {
 
 
 
-app.listen(2001, (err) => {
+server.listen(2001, (err) => {
   console.log("Server is running on port 2001");
 });
 
-module.exports = app;
+module.exports = server;

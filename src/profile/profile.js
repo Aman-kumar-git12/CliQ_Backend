@@ -86,6 +86,7 @@ ProfileRoute.delete("/profile/delete", userAuth, async (req, res) => {
       sameSite: "none"
     });
 
+    
     return res.json({ message: "Profile deleted successfully" });
 
   } catch (err) {

@@ -52,6 +52,31 @@ requestRouter.get(
 );
 
 
+// delete request 
+requestRouter.delete("/request/connections/delete/:requestId", userAuth, async (req, res) => {
+  try {
+    const loggedInUserId = req.user.id;
+    const requestId = req.params.requestId;
+
+    const findRequest = await prisma.connectionsRequest.findUnique({
+      where: { id: requestId },
+    });
+
+    if (!findRequest || findRequest.toUserId !== loggedInUserId) {
+      return res.status(404).json({ message: "Connection request not found" });
+    }
+
+    const deleted = await prisma.connectionsRequest.delete({
+      where: { id: requestId },
+    });
+
+    res.json({ message: "Connection request deleted successfully", deleted });
+  } catch (err) {
+    res.status(500).json({ message: "Internal server error", error: err.message });
+  }
+});
+
+
 // get random users 
 requestRouter.get("/request/user", userAuth, async (req, res) => {
   try {
