@@ -90,6 +90,12 @@ chatRoutes.delete("/chat/message/:messageId", userAuth, async (req, res) => {
             const conversation = message.conversation;
             const roomId = getRoomId(conversation);
 
+            console.log(`[DELETE] Emitting messageDeleted to room: ${roomId}`, {
+                messageId,
+                conversationId: conversation.id,
+                participantIds: conversation.participantIds
+            });
+
             io.to(roomId).emit("messageDeleted", {
                 messageId,
                 conversationId: conversation.id
@@ -149,6 +155,12 @@ chatRoutes.put("/chat/message/:messageId", userAuth, async (req, res) => {
             const io = getIO();
             const conversation = message.conversation;
             const roomId = getRoomId(conversation);
+
+            console.log(`[PUT] Emitting messageUpdated to room: ${roomId}`, {
+                messageId,
+                text,
+                conversationId: conversation.id
+            });
 
             io.to(roomId).emit("messageUpdated", {
                 messageId,

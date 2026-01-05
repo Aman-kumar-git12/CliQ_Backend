@@ -1,28 +1,37 @@
 
-const socket = require("socket.io")
+const SocketIO = require("socket.io")
 const { prisma } = require("../../prisma/prismaClient");
 
 let io;
 
 const initialiseSocket = (server) => {
 
-    io = socket(server, {
+    io = SocketIO(server, {
         cors: {
             origin: process.env.FRONTEND_URL,
         },
     });
 
     io.on("connection", async (socket) => {
-        console.log("user connected");
+        console.log("user connected socketId: ", socket.id);
+
         socket.on("joinChat", ({ firstname, userId, targetuserId }) => {
+            if (!userId || !targetuserId) {
+                console.warn("joinChat: Missing userId or targetuserId", { userId, targetuserId });
+                return;
+            }
+            // TODO: Support group chat roomId logic if needed in future
             const roomId = [userId, targetuserId].sort().join("_")
             console.log(firstname + " joined room " + roomId)
             socket.join(roomId)
         })
 
-
-
         socket.on("sendMessage", async ({ firstname, userId, targetuserId, text: newMessage }) => {
+            if (!userId || !targetuserId) {
+                console.error("sendMessage: Missing userId or targetuserId");
+                return;
+            }
+
             const roomId = [userId, targetuserId].sort().join("_")
             console.log(firstname + " : " + newMessage + " " + roomId)
 
@@ -69,8 +78,6 @@ const initialiseSocket = (server) => {
                 console.error("Error saving message:", err);
             }
         });
-
-
 
     });
 
