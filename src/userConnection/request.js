@@ -4,7 +4,7 @@ const {
   userAuth,
   RequestValidation,
   ReviewValidation,
-} = require("../userConnection/auth");
+} = require("../auth/middleware");
 const { prisma } = require("../../prisma/prismaClient");
 
 

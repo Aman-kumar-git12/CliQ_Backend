@@ -1,4 +1,4 @@
-const { userAuth } = require("./auth");
+const { userAuth } = require("../auth/middleware");
 const express = require("express");
 const ProfileRoute = express.Router();
 const { ValidationFields } = require("./validation");
@@ -82,11 +82,11 @@ ProfileRoute.delete("/profile/delete", userAuth, async (req, res) => {
     // 🔥 Clear authentication cookie after deleting
     res.clearCookie("auth_token", {
       httpOnly: true,
-      secure: true,
-      sameSite: "none"
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax"
     });
 
-    
+
     return res.json({ message: "Profile deleted successfully" });
 
   } catch (err) {
@@ -143,61 +143,61 @@ ProfileRoute.put(
 
 // post experties 
 ProfileRoute.put("/profile/expertise", userAuth, async (req, res) => {
-    try {
-        const userId = req.user.id;
-        console.log(userId)
-        const {
-            name,
-            description,
-            experience,
-            skills,
-            projects,
-            achievements,
-            interests,
-            aboutYou,
-            details,
-            format
-        } = req.body;
+  try {
+    const userId = req.user.id;
+    console.log(userId)
+    const {
+      name,
+      description,
+      experience,
+      skills,
+      projects,
+      achievements,
+      interests,
+      aboutYou,
+      details,
+      format
+    } = req.body;
 
-        // If field is empty → convert to "****"
-        const expertiseObj = {
-            name: name || "****",
-            description: description || "****",
-            experience: experience || "****",
-            skills: skills?.length ? skills : ["****"],
-            projects: projects || "****",
-            achievements: achievements || "****",
-            interests: interests || "****",
-            aboutYou: aboutYou || "****",
-            details: {
-                email: details?.email || "****",
-                address: details?.address || "****",
-            },
-            format: format || 1,
-            updatedAt: new Date()
-        };
+    // If field is empty → convert to "****"
+    const expertiseObj = {
+      name: name || "****",
+      description: description || "****",
+      experience: experience || "****",
+      skills: skills?.length ? skills : ["****"],
+      projects: projects || "****",
+      achievements: achievements || "****",
+      interests: interests || "****",
+      aboutYou: aboutYou || "****",
+      details: {
+        email: details?.email || "****",
+        address: details?.address || "****",
+      },
+      format: format || 1,
+      updatedAt: new Date()
+    };
 
 
-        // Save Expertise
-        const updatedUser = await prisma.users.update({
-            where: { id: userId },
-            data: {
-                expertise: expertiseObj
-            }
-        });
+    // Save Expertise
+    const updatedUser = await prisma.users.update({
+      where: { id: userId },
+      data: {
+        expertise: expertiseObj
+      }
+    });
 
-        return res.json({
-            message: "Expertise saved successfully",
-            expertise: updatedUser.expertise
-        });
+    return res.json({
+      message: "Expertise saved successfully",
+      expertise: updatedUser.expertise
+    });
 
-    } catch (error) {
-        console.log("Expertise Error:", error);
-        return res.status(500).json({
-            message: "Internal Server Error",
-            error: error.message
-        });
-    }
+  } catch (error) {
+    console.log("Expertise Error:", error);
+    return res.status(500).json({
+      message: "Internal Server Error",
+      error: error.message
+    });
+  }
 });
 
 

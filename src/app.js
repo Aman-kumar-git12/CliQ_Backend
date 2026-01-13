@@ -56,8 +56,8 @@ app.get("/users", async (req, res) => {
 
 
 
-server.listen(2001, (err) => {
-  console.log("Server is running on port 2001");
+server.listen(2003, (err) => {
+  console.log("Server is running on port 2003");
 });
 
 module.exports = server;

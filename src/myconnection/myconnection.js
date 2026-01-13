@@ -1,6 +1,6 @@
 const express = require("express");
 const myconnectionRoutes = express.Router();
-const { userAuth } = require("../userConnection/auth");
+const { userAuth } = require("../auth/middleware");
 const { prisma } = require("../../prisma/prismaClient");
 
 

@@ -109,15 +109,19 @@ model Message {
   image         String?
   file          String?
   isDelete      Boolean @default(false)
+  deletedById   String[] @db.ObjectId @map("deleteybyid")
 
   status        MessageStatus @default(sent)
 
   conversationId String @db.ObjectId
   senderId       String @db.ObjectId
+  parentMessageId String? @db.ObjectId
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender       Users        @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  parentMessage Message?    @relation("Replies", fields: [parentMessageId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  replies       Message[]   @relation("Replies")
 }

@@ -1,6 +1,6 @@
 const express = require('express')
 const postRoute = express.Router()
-const { userAuth } = require('../userConnection/auth')
+const { userAuth } = require('../auth/middleware')
 const { prisma } = require("../../prisma/prismaClient");
 const { ValidatePost, ValidatePostUpdate, ValidatePostDelete } = require('./middleware')
 const cloudinary = require('../upload/cloudinary');
@@ -156,6 +156,11 @@ postRoute.delete('/delete/post/:postId', userAuth, async (req, res) => {
             return res.status(404).json({ message: "Post not found" })
         }
 
+        // Ownership check
+        if (post.userId !== req.user.id) {
+            return res.status(403).json({ message: "You are not authorized to delete this post" })
+        }
+
         const deletedPost = await prisma.post.delete({
             where: {
                 id: postId
@@ -190,6 +195,11 @@ postRoute.put('/update/post/:postId', userAuth, async (req, res) => {
             return res.status(404).json({ message: "Post not found" })
         }
 
+        // Ownership check
+        if (post.userId !== req.user.id) {
+            return res.status(403).json({ message: "You are not authorized to update this post" })
+        }
+
         // only content will change
         const updatedPost = await prisma.post.update({
             where: {
@@ -218,29 +228,27 @@ postRoute.get('/post/feed', userAuth, async (req, res) => {
         const limit = Number(req.query.limit) || 10;
         const skip = (page - 1) * limit;
 
-        // Step 1: fetch 50 posts randomly to avoid same order
-        let posts = await prisma.post.findMany({
+        // Fetch posts from others with stable ordering
+        const posts = await prisma.post.findMany({
             where: {
                 userId: { not: id }
             },
-            take: 50,
+            skip: skip,
+            take: limit,
             orderBy: { createdAt: "desc" }
         });
 
-        // Step 2: Shuffle your 50 posts (your logic)
-        for (let i = posts.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [posts[i], posts[j]] = [posts[j], posts[i]];
-        }
-
-        // Step 3: Apply pagination
-        const paginatedPosts = posts.slice(skip, skip + limit);
+        const totalCount = await prisma.post.count({
+            where: {
+                userId: { not: id }
+            }
+        });
 
         res.json({
             page,
             limit,
-            hasMore: paginatedPosts.length === limit,
-            posts: paginatedPosts
+            hasMore: skip + posts.length < totalCount,
+            posts: posts
         });
 
     } catch (error) {
@@ -250,7 +258,7 @@ postRoute.get('/post/feed', userAuth, async (req, res) => {
 });
 
 
- 
+
 
 
 

@@ -1,5 +1,5 @@
 const express = require("express");
-const { userAuth } = require("../userConnection/auth");
+const { userAuth } = require("../auth/middleware");
 const searchRoute = express.Router();
 const { prisma } = require("../../prisma/prismaClient");
 const { SearchValidation } = require("./validation");
@@ -84,7 +84,7 @@ searchRoute.get("/user/search/:name", userAuth, async (req, res) => {
 searchRoute.get("/user/:id", userAuth, async (req, res) => {
     try {
         console.log("ok")
-        const  {id}  = req.params;
+        const { id } = req.params;
         console.log(id)
 
         const user = await prisma.users.findUnique({
