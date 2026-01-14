@@ -17,6 +17,7 @@ postRouter.post("/create/post", userAuth, upload.single("image"), validatePost, 
 postRouter.delete("/delete/post/:postId", userAuth, postController.deletePost);
 postRouter.put("/update/post/:postId", userAuth, validatePostUpdate, postController.updatePost);
 postRouter.get("/post/feed", userAuth, postController.getPostFeed);
+postRouter.post("/post/feed/random", userAuth, postController.getRandomPostFeed);
 postRouter.post("/user/post/report/:postId", userAuth, postController.reportPost);
 postRouter.post("/user/comment/report/:commentId", userAuth, postController.reportComment);
 

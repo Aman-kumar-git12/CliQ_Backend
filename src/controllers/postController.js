@@ -364,6 +364,86 @@ const getPostFeed = async (req, res) => {
     }
 };
 
+const getRandomPostFeed = async (req, res) => {
+    try {
+        const { id: currentUserId } = req.user;
+        const { excludeIds = [] } = req.body;
+        const limit = 5;
+
+        // 1. Get random post IDs excluding already seen ones and own posts
+        const randomDocs = await prisma.post.aggregateRaw({
+            pipeline: [
+                {
+                    $match: {
+                        userId: { $ne: { "$oid": currentUserId } }, // Correctly match ObjectId
+                        _id: {
+                            $nin: excludeIds.map(id => ({ "$oid": id })) // Exclude seen IDs
+                        }
+                    }
+                },
+                { $sample: { size: limit } }, // Random sample of 5
+                { $project: { _id: 1 } } // Only need IDs
+            ]
+        });
+
+        // If no more posts found
+        if (!randomDocs || randomDocs.length === 0) {
+            return res.json({
+                hasMore: false,
+                posts: []
+            });
+        }
+
+        // Convert aggregated IDs back to strings
+        const randomIds = randomDocs.map(doc => doc._id.$oid);
+
+        // 2. Fetch full details for these random IDs
+        const posts = await prisma.post.findMany({
+            where: {
+                id: { in: randomIds }
+            },
+            include: {
+                _count: {
+                    select: {
+                        likes: { where: { isLiked: true } },
+                        comments: true
+                    }
+                },
+                likes: { where: { userId: currentUserId } },
+                reports: { where: { userId: currentUserId } },
+                user: {
+                    select: {
+                        firstname: true,
+                        lastname: true,
+                        imageUrl: true
+                    }
+                }
+            }
+        });
+
+        // 3. Format posts
+        const formattedPosts = posts.map(post => ({
+            ...post,
+            likes: post._count.likes,
+            comments: post._count.comments,
+            isLiked: post.likes.length > 0 && post.likes[0].isLiked === true,
+            isReported: post.reports && post.reports.length > 0,
+            // Add user details directly to root if frontend expects it, or keep nested
+            username: post.user ? `${post.user.firstname} ${post.user.lastname}` : "Unknown",
+            avatar: post.user?.imageUrl || "https://github.com/shadcn.png"
+        }));
+
+        res.json({
+            hasMore: formattedPosts.length === limit, // Heuristic: if we got less than requested, we might be out
+            posts: formattedPosts
+        });
+
+    } catch (error) {
+        console.error("Random Feed Error:", error);
+        res.status(500).json({ message: "Internal Server Error", error: error.message });
+    }
+};
+
 const getLikesCount = async (req, res) => {
     try {
         const { postId } = req.params;
@@ -487,5 +567,6 @@ module.exports = {
     createLike,
     getLikesCount,
     reportPost,
-    reportComment
+    reportComment,
+    getRandomPostFeed
 };
