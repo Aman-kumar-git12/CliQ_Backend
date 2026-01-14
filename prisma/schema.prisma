@@ -30,6 +30,7 @@ model Users {
   receivedRequests ConnectionsRequest[] @relation("receivedRequests")
   comments         Comment[]
   posts Post[]
+  likes Like[]
 
   conversationsIds String[] @db.ObjectId
   conversations Conversation[] @relation(fields: [conversationsIds], references: [id])
@@ -64,8 +65,8 @@ model Post {
 
   userId String @db.ObjectId
   user   Users @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   comments Comment[]
+  likes    Like[]
 }
 
 model Comment {
@@ -124,4 +125,17 @@ model Message {
   sender       Users        @relation(fields: [senderId], references: [id], onDelete: Cascade)
   parentMessage Message?    @relation("Replies", fields: [parentMessageId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   replies       Message[]   @relation("Replies")
+}
+
+model Like {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  createdAt DateTime @default(now())
+
+  userId String @db.ObjectId
+  user   Users  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  postId String @db.ObjectId
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
 }

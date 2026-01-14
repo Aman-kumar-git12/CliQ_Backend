@@ -1,10 +1,6 @@
-const express = require("express");
-const myconnectionRoutes = express.Router();
-const { userAuth } = require("../auth/middleware");
 const { prisma } = require("../../prisma/prismaClient");
 
-
-myconnectionRoutes.get("/myconnection", userAuth, async (req, res) => {
+const getMyConnections = async (req, res) => {
     try {
         const myconnection = await prisma.connectionsRequest.findMany({
             where: {
@@ -30,7 +26,8 @@ myconnectionRoutes.get("/myconnection", userAuth, async (req, res) => {
     } catch (err) {
         res.status(500).json({ message: "Internal server error", error: err.message });
     }
-})
+};
 
-
-module.exports = { myconnectionRoutes };
+module.exports = {
+    getMyConnections
+};
