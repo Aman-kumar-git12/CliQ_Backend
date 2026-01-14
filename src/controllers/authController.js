@@ -12,6 +12,7 @@ const getMe = async (req, res) => {
                 lastname: true,
                 email: true,
                 age: true,
+                imageUrl: true,
                 createdAt: true,
                 updatedAt: true,
             },

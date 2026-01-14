@@ -3,8 +3,31 @@ const cloudinary = require("../upload/cloudinary");
 
 const getAllPosts = async (req, res) => {
     try {
-        const posts = await prisma.post.findMany();
-        res.json(posts);
+        const currentUserId = req.user.id;
+        const posts = await prisma.post.findMany({
+            include: {
+                _count: {
+                    select: {
+                        likes: { where: { isLiked: true } },
+                        comments: true
+                    }
+                },
+                likes: {
+                    where: { userId: currentUserId }
+                },
+                reports: {
+                    where: { userId: currentUserId }
+                }
+            }
+        });
+        const formattedPosts = posts.map(post => ({
+            ...post,
+            likes: post._count.likes,
+            comments: post._count.comments,
+            isLiked: post.likes.length > 0 && post.likes[0].isLiked === true,
+            isReported: post.reports && post.reports.length > 0
+        }));
+        res.json(formattedPosts);
     } catch (error) {
         res.status(500).json({ message: "Internal Server Error", error: error.message });
     }
@@ -13,11 +36,33 @@ const getAllPosts = async (req, res) => {
 const getPostsByUserId = async (req, res) => {
     try {
         const { userId } = req.params;
+        const currentUserId = req.user.id;
         const posts = await prisma.post.findMany({
             where: { userId },
+            include: {
+                _count: {
+                    select: {
+                        likes: { where: { isLiked: true } },
+                        comments: true
+                    }
+                },
+                likes: {
+                    where: { userId: currentUserId }
+                },
+                reports: {
+                    where: { userId: currentUserId }
+                }
+            },
             orderBy: { createdAt: 'desc' }
         });
-        res.json(posts);
+        const formattedPosts = posts.map(post => ({
+            ...post,
+            likes: post._count.likes,
+            comments: post._count.comments,
+            isLiked: post.likes.length > 0 && post.likes[0].isLiked === true,
+            isReported: post.reports && post.reports.length > 0
+        }));
+        res.json(formattedPosts);
     } catch (error) {
         res.status(500).json({ message: "Internal Server Error", error: error.message });
     }
@@ -26,11 +71,58 @@ const getPostsByUserId = async (req, res) => {
 const getPostById = async (req, res) => {
     try {
         const { postId } = req.params;
+        const currentUserId = req.user.id;
+        console.log("Fetching post ID:", postId, "for user:", currentUserId);
+
+        // Validate ObjectID format
+        if (!/^[0-9a-fA-F]{24}$/.test(postId)) {
+            return res.status(400).json({ message: "Invalid Post ID format" });
+        }
+
         const post = await prisma.post.findUnique({
-            where: { id: postId }
+            where: { id: postId },
+            include: {
+                user: {
+                    select: {
+                        firstname: true,
+                        lastname: true,
+                        imageUrl: true
+                    }
+                },
+                _count: {
+                    select: { comments: true }
+                },
+                likes: {
+                    where: { userId: currentUserId }
+                },
+                reports: {
+                    where: { userId: currentUserId }
+                }
+            }
         });
-        res.json(post);
+
+        if (!post) {
+            console.log("Post not found:", postId);
+            return res.status(404).json({ message: "Post not found" });
+        }
+
+        const likesCount = await prisma.like.count({
+            where: { postId, isLiked: true }
+        });
+
+        const formattedPost = {
+            ...post,
+            username: post.user ? (post.user.firstname + " " + post.user.lastname) : "Anonymous",
+            avatar: post.user ? post.user.imageUrl : "https://github.com/shadcn.png",
+            likes: likesCount,
+            comments: post._count.comments,
+            isLiked: post.likes.length > 0 && post.likes[0].isLiked === true,
+            isReported: post.reports && post.reports.length > 0
+        };
+
+        res.json(formattedPost);
     } catch (error) {
+        console.error("Error in getPostById:", error);
         res.status(500).json({ message: "Internal Server Error", error: error.message });
     }
 };
@@ -53,14 +145,85 @@ const addComment = async (req, res) => {
     }
 };
 
+const createLike = async (req, res) => {
+    try {
+        const { postId } = req.params;
+        const userId = req.user.id;
+
+        // Validate ObjectID format
+        if (!/^[0-9a-fA-F]{24}$/.test(postId)) {
+            return res.status(400).json({ message: "Invalid Post ID format" });
+        }
+
+        const existingLike = await prisma.like.findUnique({
+            where: {
+                userId_postId: {
+                    userId,
+                    postId
+                }
+            }
+        });
+
+        if (existingLike && existingLike.isLiked) {
+            await prisma.like.update({
+                where: { id: existingLike.id },
+                data: { isLiked: false }
+            });
+            return res.json({ message: "Post unliked", isLiked: false });
+        } else if (existingLike && !existingLike.isLiked) {
+            await prisma.like.update({
+                where: { id: existingLike.id },
+                data: { isLiked: true }
+            });
+            return res.json({ message: "Post liked", isLiked: true });
+        } else {
+            await prisma.like.create({
+                data: {
+                    userId,
+                    postId,
+                    isLiked: true
+                }
+            });
+            return res.json({ message: "Post liked", isLiked: true });
+        }
+    } catch (error) {
+        console.error("Error in createLike:", error);
+        res.status(500).json({ message: "Internal Server Error", error: error.message });
+    }
+};
+
 const getCommentsByPostId = async (req, res) => {
     try {
         const { postId } = req.params;
+        const currentUserId = req.user.id;
+
         const comments = await prisma.comment.findMany({
-            where: { postId }
+            where: { postId },
+            include: {
+                user: {
+                    select: {
+                        firstname: true,
+                        lastname: true,
+                        imageUrl: true
+                    }
+                },
+                reports: {
+                    where: { userId: currentUserId }
+                }
+            },
+            orderBy: { createdAt: 'desc' }
         });
-        res.json(comments);
+
+        const formattedComments = comments.map(c => ({
+            ...c,
+            username: c.user ? (c.user.firstname + " " + c.user.lastname) : "Anonymous",
+            avatar: c.user ? c.user.imageUrl : "https://github.com/shadcn.png",
+            isReported: c.reports && c.reports.length > 0
+        }));
+
+        res.json(formattedComments);
     } catch (error) {
+        console.error("Error in getCommentsByPostId:", error);
         res.status(500).json({ message: "Internal Server Error", error: error.message });
     }
 };
@@ -160,6 +323,20 @@ const getPostFeed = async (req, res) => {
 
         const posts = await prisma.post.findMany({
             where: { userId: { not: id } },
+            include: {
+                _count: {
+                    select: {
+                        likes: { where: { isLiked: true } },
+                        comments: true
+                    }
+                },
+                likes: {
+                    where: { userId: id }
+                },
+                reports: {
+                    where: { userId: id }
+                }
+            },
             skip: skip,
             take: limit,
             orderBy: { createdAt: "desc" }
@@ -169,12 +346,129 @@ const getPostFeed = async (req, res) => {
             where: { userId: { not: id } }
         });
 
+        const formattedPosts = posts.map(post => ({
+            ...post,
+            likes: post._count.likes,
+            comments: post._count.comments,
+            isLiked: post.likes.length > 0 && post.likes[0].isLiked === true,
+            isReported: post.reports && post.reports.length > 0
+        }));
+
         res.json({
             page,
             limit,
             hasMore: skip + posts.length < totalCount,
-            posts: posts
+            posts: formattedPosts
         });
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message });
+    }
+};
+
+const getLikesCount = async (req, res) => {
+    try {
+        const { postId } = req.params;
+        const count = await prisma.like.count({
+            where: {
+                postId,
+                isLiked: true
+            }
+        });
+        res.json({ likesCount: count });
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message });
+    }
+};
+
+const deleteComment = async (req, res) => {
+    try {
+        const { commentId } = req.params;
+        const userId = req.user.id; // From userAuth middleware
+
+        // Check if comment exists and belongs to the user
+        const comment = await prisma.comment.findUnique({
+            where: { id: commentId }
+        });
+
+        if (!comment) {
+            return res.status(404).json({ message: "Comment not found" });
+        }
+
+        if (comment.userId !== userId) {
+            return res.status(403).json({ message: "You can only delete your own comments" });
+        }
+
+        await prisma.comment.delete({
+            where: { id: commentId }
+        });
+
+        res.json({ message: "Comment deleted successfully" });
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message });
+    }
+};
+
+const reportPost = async (req, res) => {
+    try {
+        const { postId } = req.params;
+        const { reason } = req.body;
+        const userId = req.user.id;
+
+        if (!reason) {
+            return res.status(400).json({ message: "Reason is required to report a post" });
+        }
+
+        // Check for existing report
+        const existingReport = await prisma.report.findFirst({
+            where: { userId, postId }
+        });
+
+        if (existingReport) {
+            return res.status(400).json({ message: "You have already reported this post" });
+        }
+
+        const report = await prisma.report.create({
+            data: {
+                reason,
+                postId,
+                userId
+            }
+        });
+
+        res.json({ message: "Post reported successfully", report });
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message });
+    }
+};
+
+const reportComment = async (req, res) => {
+    try {
+        const { commentId } = req.params;
+        const { reason } = req.body;
+        const userId = req.user.id;
+
+        if (!reason) {
+            return res.status(400).json({ message: "Reason is required to report a comment" });
+        }
+
+        // Check for existing report
+        const existingReport = await prisma.report.findFirst({
+            where: { userId, commentId }
+        });
+
+        if (existingReport) {
+            return res.status(400).json({ message: "You have already reported this comment" });
+        }
+
+        const report = await prisma.report.create({
+            data: {
+                reason,
+                commentId,
+                userId
+            }
+        });
+
+        res.json({ message: "Comment reported successfully", report });
     } catch (error) {
         res.status(500).json({ message: "Internal Server Error", error: error.message });
     }
@@ -186,8 +480,13 @@ module.exports = {
     getPostById,
     addComment,
     getCommentsByPostId,
+    deleteComment,
     createPost,
     deletePost,
     updatePost,
-    getPostFeed
+    getPostFeed,
+    createLike,
+    getLikesCount,
+    reportPost,
+    reportComment
 };

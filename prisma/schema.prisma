@@ -30,7 +30,8 @@ model Users {
   receivedRequests ConnectionsRequest[] @relation("receivedRequests")
   comments         Comment[]
   posts Post[]
-  likes Like[]
+  likes    Like[]
+  reports  Report[]
 
   conversationsIds String[] @db.ObjectId
   conversations Conversation[] @relation(fields: [conversationsIds], references: [id])
@@ -67,6 +68,7 @@ model Post {
   user   Users @relation(fields: [userId], references: [id], onDelete: Cascade)
   comments Comment[]
   likes    Like[]
+  reports  Report[]
 }
 
 model Comment {
@@ -80,6 +82,7 @@ model Comment {
 
   postId String @db.ObjectId
   post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  reports Report[]
 }
   
 
@@ -130,6 +133,7 @@ model Message {
 model Like {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   createdAt DateTime @default(now())
+  isLiked   Boolean  @default(true)
 
   userId String @db.ObjectId
   user   Users  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -138,4 +142,19 @@ model Like {
   post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@unique([userId, postId])
+}
+
+model Report {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  reason    String
+  createdAt DateTime @default(now())
+
+  userId String @db.ObjectId
+  user   Users  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  postId String? @db.ObjectId
+  post   Post?   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  commentId String?  @db.ObjectId
+  comment   Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
 }
