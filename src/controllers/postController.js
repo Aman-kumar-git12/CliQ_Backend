@@ -122,7 +122,6 @@ const getPostById = async (req, res) => {
 
         res.json(formattedPost);
     } catch (error) {
-        console.error("Error in getPostById:", error);
         res.status(500).json({ message: "Internal Server Error", error: error.message });
     }
 };
