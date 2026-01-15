@@ -6,6 +6,13 @@ const getAllPosts = async (req, res) => {
         const currentUserId = req.user.id;
         const posts = await prisma.post.findMany({
             include: {
+                user: {
+                    select: {
+                        firstname: true,
+                        lastname: true,
+                        imageUrl: true
+                    }
+                },
                 _count: {
                     select: {
                         likes: { where: { isLiked: true } },
@@ -22,6 +29,8 @@ const getAllPosts = async (req, res) => {
         });
         const formattedPosts = posts.map(post => ({
             ...post,
+            username: post.user ? `${post.user.firstname} ${post.user.lastname}` : "Anonymous",
+            avatar: post.user?.imageUrl || "https://github.com/shadcn.png",
             likes: post._count.likes,
             comments: post._count.comments,
             isLiked: post.likes.length > 0 && post.likes[0].isLiked === true,
@@ -40,6 +49,13 @@ const getPostsByUserId = async (req, res) => {
         const posts = await prisma.post.findMany({
             where: { userId },
             include: {
+                user: {
+                    select: {
+                        firstname: true,
+                        lastname: true,
+                        imageUrl: true
+                    }
+                },
                 _count: {
                     select: {
                         likes: { where: { isLiked: true } },
@@ -57,6 +73,8 @@ const getPostsByUserId = async (req, res) => {
         });
         const formattedPosts = posts.map(post => ({
             ...post,
+            username: post.user ? `${post.user.firstname} ${post.user.lastname}` : "Anonymous",
+            avatar: post.user?.imageUrl || "https://github.com/shadcn.png",
             likes: post._count.likes,
             comments: post._count.comments,
             isLiked: post.likes.length > 0 && post.likes[0].isLiked === true,
@@ -323,6 +341,13 @@ const getPostFeed = async (req, res) => {
         const posts = await prisma.post.findMany({
             where: { userId: { not: id } },
             include: {
+                user: {
+                    select: {
+                        firstname: true,
+                        lastname: true,
+                        imageUrl: true
+                    }
+                },
                 _count: {
                     select: {
                         likes: { where: { isLiked: true } },
@@ -347,6 +372,8 @@ const getPostFeed = async (req, res) => {
 
         const formattedPosts = posts.map(post => ({
             ...post,
+            username: post.user ? `${post.user.firstname} ${post.user.lastname}` : "Anonymous",
+            avatar: post.user?.imageUrl || "https://github.com/shadcn.png",
             likes: post._count.likes,
             comments: post._count.comments,
             isLiked: post.likes.length > 0 && post.likes[0].isLiked === true,
