@@ -28,6 +28,11 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 app.use("/", routes);
 
+// Add health check endpoint
+app.get("/api/health", (req, res) => {
+  res.status(200).send("OK");
+});
+
 
 // socket code
 const server = http.createServer(app);
