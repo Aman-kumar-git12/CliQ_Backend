@@ -11,6 +11,7 @@ chatRouter.put("/chat/message/:messageId", userAuth, chatController.updateMessag
 chatRouter.delete("/chat/conversation/:targetUserId", userAuth, chatController.hideConversation);
 chatRouter.post("/chat/upload", userAuth, upload.single("file"), chatController.uploadFile);
 chatRouter.post("/chat/delete-bulk", userAuth, chatController.deleteMessagesBulk);
+chatRouter.get("/chat/public/groups/:userId", userAuth, chatController.getPublicUserGroups);
 
 
 module.exports = chatRouter;

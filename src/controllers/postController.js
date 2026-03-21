@@ -580,6 +580,39 @@ const reportComment = async (req, res) => {
     }
 };
 
+const getUsersWhoLikedPost = async (req, res) => {
+    try {
+        const { postId } = req.params;
+        const likes = await prisma.like.findMany({
+            where: {
+                postId,
+                isLiked: true
+            },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        firstname: true,
+                        lastname: true,
+                        imageUrl: true
+                    }
+                }
+            },
+            take: 10 // Limit for hover card
+        });
+
+        const users = likes.map(l => ({
+            id: l.user.id,
+            username: `${l.user.firstname} ${l.user.lastname}`,
+            avatar: l.user.imageUrl || "https://github.com/shadcn.png"
+        }));
+
+        res.json(users);
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message });
+    }
+};
+
 module.exports = {
     getAllPosts,
     getPostsByUserId,
@@ -595,5 +628,6 @@ module.exports = {
     getLikesCount,
     reportPost,
     reportComment,
-    getRandomPostFeed
+    getRandomPostFeed,
+    getUsersWhoLikedPost
 };

@@ -9,6 +9,7 @@ postRouter.get("/user/post", userAuth, postController.getAllPosts);
 postRouter.get("/user/posts/:userId", userAuth, postController.getPostsByUserId);
 postRouter.get("/user/post/:postId", userAuth, postController.getPostById);
 postRouter.get("/user/post/likes/count/:postId", userAuth, postController.getLikesCount);
+postRouter.get("/user/post/likes/users/:postId", userAuth, postController.getUsersWhoLikedPost);
 postRouter.post("/user/post/like/:postId", userAuth, postController.createLike);
 postRouter.post("/user/post/comments/:postId", userAuth, postController.addComment);
 postRouter.get("/user/post/comments/:postId", userAuth, postController.getCommentsByPostId);

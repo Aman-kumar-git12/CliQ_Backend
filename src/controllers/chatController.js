@@ -18,7 +18,12 @@ const getConversations = async (req, res) => {
                     select: { id: true, firstname: true, lastname: true, imageUrl: true }
                 },
                 messages: {
-                    where: { NOT: { deletedById: { has: loggedInUserId } } },
+                    where: { 
+                        AND: [
+                            { NOT: { deletedById: { has: loggedInUserId } } },
+                            { isDelete: false }
+                        ]
+                    },
                     orderBy: { createdAt: "desc" },
                     take: 1
                 }
@@ -49,7 +54,7 @@ const getConversations = async (req, res) => {
                 name: `${otherParticipant.firstname || "User"} ${otherParticipant.lastname || ""}`.trim(),
                 imageUrl: otherParticipant.imageUrl,
                 lastMessage: lastMessage
-                    ? (lastMessage.isDelete ? "This message was deleted" : lastMessage.text)
+                    ? (lastMessage.text || (lastMessage.image ? "Image" : (lastMessage.file ? (lastMessage.file.includes("voice_message") ? "Voice Message" : "File") : "Message")))
                     : "No messages yet",
                 lastMessageTime: lastMessage ? lastMessage.createdAt : conv.updatedAt,
                 unread: false
@@ -302,7 +307,10 @@ const deleteMessagesBulk = async (req, res) => {
         // Process each message based on type and ownership
         for (const id of messageIds) {
             try {
-                const message = await prisma.message.findUnique({ where: { id } });
+                const message = await prisma.message.findUnique({ 
+                    where: { id },
+                    include: { conversation: true }
+                });
                 if (!message) continue;
 
                 if (deleteType === 'everyone' && message.senderId === loggedInUserId) {
@@ -310,6 +318,18 @@ const deleteMessagesBulk = async (req, res) => {
                         where: { id },
                         data: { isDelete: true }
                     });
+
+                    // Real-time notification for Everyone delete
+                    try {
+                        const io = getIO();
+                        const roomId = getRoomId(message.conversation);
+                        io.to(roomId).emit("messageDeleted", { 
+                            messageId: id, 
+                            conversationId: message.conversationId 
+                        });
+                    } catch (socketErr) {
+                        console.error(`Socket emit failed for bulk delete message ${id}:`, socketErr.message);
+                    }
                 } else {
                     // Delete for me
                     if (!message.deletedById.includes(loggedInUserId)) {
@@ -334,7 +354,31 @@ const deleteMessagesBulk = async (req, res) => {
     }
 };
 
+const getPublicUserGroups = async (req, res) => {
+    try {
+        const { userId } = req.params;
 
+        if (!userId || userId.length !== 24 || !/^[0-9a-fA-F]+$/.test(userId)) {
+            return res.status(400).json({ message: "Invalid User ID format" });
+        }
+
+        const groups = await prisma.conversation.findMany({
+            where: {
+                isGroup: true,
+                participantIds: { has: userId }
+            },
+            include: {
+                participants: {
+                    select: { id: true, firstname: true, lastname: true, imageUrl: true }
+                }
+            }
+        });
+
+        res.json({ message: "Public groups successfully fetched", groups });
+    } catch (err) {
+        res.status(500).json({ message: "Internal Server Error", error: err.message });
+    }
+};
 
 module.exports = {
     getConversations,
@@ -343,5 +387,6 @@ module.exports = {
     deleteMessage,
     updateMessage,
     hideConversation,
-    uploadFile
+    uploadFile,
+    getPublicUserGroups
 };

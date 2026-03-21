@@ -5,6 +5,7 @@ const { userAuth } = require("../middlewares/authMiddleware");
 
 userRouter.get("/user/requests", userAuth, userController.getRequests);
 userRouter.get("/user/connections", userAuth, userController.getConnections);
+userRouter.get("/user/public/connections/:userId", userAuth, userController.getPublicUserConnections);
 userRouter.delete("/user/connections/cancel/:toUserId", userAuth, userController.cancelRequest);
 userRouter.delete("/user/connections/unfriend/:otherUserId", userAuth, userController.unfriend);
 userRouter.get("/user/feed", userAuth, userController.getFeed);

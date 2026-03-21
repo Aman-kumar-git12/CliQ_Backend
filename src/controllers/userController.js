@@ -162,10 +162,56 @@ const getFeed = async (req, res) => {
     }
 };
 
+const getPublicUserConnections = async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        if (!userId || userId.length !== 24 || !/^[0-9a-fA-F]+$/.test(userId)) {
+            return res.status(400).json({ message: "Invalid User ID format" });
+        }
+
+        const connections = await prisma.connectionsRequest.findMany({
+            where: {
+                status: "accepted",
+                OR: [{ fromUserId: userId }, { toUserId: userId }],
+            },
+            include: {
+                fromUser: {
+                    select: {
+                        id: true,
+                        firstname: true,
+                        lastname: true,
+                        imageUrl: true,
+                        expertise: true
+                    }
+                },
+                toUser: {
+                    select: {
+                        id: true,
+                        firstname: true,
+                        lastname: true,
+                        imageUrl: true,
+                        expertise: true
+                    }
+                }
+            }
+        });
+
+        const connectedUsers = connections.map(conn => {
+            return conn.fromUserId === userId ? conn.toUser : conn.fromUser;
+        });
+
+        res.json({ message: "Public connections successfully fetched", connections: connectedUsers });
+    } catch (err) {
+        res.status(500).json({ message: "Internal Server Error", error: err.message });
+    }
+};
+
 module.exports = {
     getRequests,
     getConnections,
     cancelRequest,
     unfriend,
-    getFeed
+    getFeed,
+    getPublicUserConnections
 };
