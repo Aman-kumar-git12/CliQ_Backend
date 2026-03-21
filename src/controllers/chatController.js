@@ -1,5 +1,6 @@
 const { prisma } = require("../../prisma/prismaClient");
-const { getIO } = require("../socket/socket"); // Correcting path if needed
+const { getIO } = require("../socket/socket");
+const cloudinary = require("../upload/cloudinary");
 
 const getRoomId = (conversation) => {
     if (conversation.isGroup) return conversation.id;
@@ -237,10 +238,108 @@ const hideConversation = async (req, res) => {
     }
 };
 
+const uploadFile = async (req, res) => {
+    try {
+        console.log("Upload request received:", req.file ? {
+            originalname: req.file.originalname,
+            mimetype: req.file.mimetype,
+            size: req.file.size
+        } : "No file");
+
+        if (!req.file) return res.status(400).json({ message: "No file provided" });
+
+        const isImage = req.file.mimetype.startsWith("image/");
+        const isAudio = req.file.mimetype.startsWith("audio/") || req.file.originalname.endsWith(".webm");
+
+        const folder = isImage ? "chat/images" : "chat/files";
+
+        const uploadPromise = new Promise((resolve, reject) => {
+            const stream = cloudinary.uploader.upload_stream(
+                {
+                    folder,
+                    // Cloudinary often requires 'video' resource_type for audio files
+                    resource_type: isImage ? "image" : (isAudio ? "video" : "auto"),
+                },
+                (error, result) => {
+                    if (error) {
+                        console.error("Cloudinary Stream Error:", error);
+                        reject(error);
+                    } else {
+                        resolve(result);
+                    }
+                }
+            );
+            stream.end(req.file.buffer);
+        });
+
+        const result = await uploadPromise;
+        console.log("Upload result:", result.secure_url);
+
+        res.json({
+            url: result.secure_url,
+            type: isImage ? "image" : "file",
+            originalName: req.file.originalname
+        });
+    } catch (error) {
+        console.error("Chat Upload Error Detail:", error);
+        res.status(500).json({
+            message: "Upload failed",
+            error: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
+    }
+};
+
+const deleteMessagesBulk = async (req, res) => {
+    try {
+        const loggedInUserId = req.user.id;
+        const { messageIds, deleteType } = req.body;
+
+        if (!Array.isArray(messageIds) || messageIds.length === 0) {
+            return res.status(400).json({ message: "No message IDs provided" });
+        }
+
+        // Process each message based on type and ownership
+        for (const id of messageIds) {
+            try {
+                const message = await prisma.message.findUnique({ where: { id } });
+                if (!message) continue;
+
+                if (deleteType === 'everyone' && message.senderId === loggedInUserId) {
+                    await prisma.message.update({
+                        where: { id },
+                        data: { isDelete: true }
+                    });
+                } else {
+                    // Delete for me
+                    if (!message.deletedById.includes(loggedInUserId)) {
+                        await prisma.message.update({
+                            where: { id },
+                            data: { deletedById: { push: loggedInUserId } }
+                        });
+                    }
+                }
+            } catch (innerError) {
+                console.warn(`Failed to process bulk delete for message ${id}:`, innerError.message);
+            }
+        }
+
+        return res.json({
+            success: true,
+            message: deleteType === 'everyone' ? "Bulk delete for everyone processed" : "Bulk delete for me processed"
+        });
+    } catch (err) {
+        console.error("Bulk Delete Error:", err);
+        res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+};
+
 module.exports = {
     getConversations,
     getChatHistory,
+    deleteMessagesBulk,
     deleteMessage,
     updateMessage,
-    hideConversation
+    hideConversation,
+    uploadFile
 };

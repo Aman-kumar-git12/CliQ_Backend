@@ -112,6 +112,7 @@ model Message {
   text          String?
   image         String?
   file          String?
+  originalName  String?
   isDelete      Boolean @default(false)
   deletedById   String[] @db.ObjectId @map("deleteybyid")
 

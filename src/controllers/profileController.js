@@ -5,6 +5,14 @@ const cloudinary = require("../upload/cloudinary");
 const getProfile = async (req, res) => {
     try {
         const user = req.user;
+        const connectionCount = await prisma.connectionsRequest.count({
+            where: {
+                status: "accepted",
+                OR: [{ fromUserId: user.id }, { toUserId: user.id }],
+            }
+        });
+
+        user.connections = { length: connectionCount }; // satisfy frontend
         res.json({ message: "User profile fetched successfully", user });
     } catch (err) {
         res.status(500).json({ message: "Internal server error", error: err.message });

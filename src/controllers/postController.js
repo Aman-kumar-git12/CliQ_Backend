@@ -395,7 +395,7 @@ const getRandomPostFeed = async (req, res) => {
     try {
         const { id: currentUserId } = req.user;
         const { excludeIds = [] } = req.body;
-        const limit = 5;
+        const limit = 9;
 
         // 1. Get random post IDs excluding already seen ones and own posts
         const randomDocs = await prisma.post.aggregateRaw({

@@ -37,13 +37,31 @@ const signup = async (req, res) => {
             return res.status(400).json({ message: "User already exists" });
         }
 
+        const defaultExpertise = {
+            name: `${firstname} ${lastname}`,
+            description: "*******",
+            experience: "*******",
+            skills: ["*******", "*******"],
+            projects: "*******",
+            achievements: "*******",
+            interests: "*******",
+            aboutYou: "*******",
+            details: {
+                email: email,
+                address: "*******"
+            },
+            format: 1 // default template format
+        };
+
         const user = await prisma.users.create({
             data: {
                 firstname,
                 lastname,
                 email,
-                age: parseInt(age),
+                age: isNaN(parseInt(age)) ? 18 : parseInt(age),
                 password: passwordHash,
+                expertise: defaultExpertise,
+                conversationsIds: []
             },
         });
 
@@ -62,6 +80,7 @@ const signup = async (req, res) => {
 
         res.json({ message: "User created successfully", user });
     } catch (err) {
+        console.error("Signup error details:", err);
         res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };

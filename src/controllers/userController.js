@@ -22,9 +22,32 @@ const getConnections = async (req, res) => {
             where: {
                 status: "accepted",
                 OR: [{ fromUserId: loggedInUser.id }, { toUserId: loggedInUser.id }],
+            },
+            include: {
+                fromUser: {
+                    select: {
+                        id: true,
+                        firstname: true,
+                        lastname: true,
+                        imageUrl: true
+                    }
+                },
+                toUser: {
+                    select: {
+                        id: true,
+                        firstname: true,
+                        lastname: true,
+                        imageUrl: true
+                    }
+                }
             }
         });
-        res.json({ message: "Connections successfully fetched", connections });
+
+        const connectedUsers = connections.map(conn => {
+            return conn.fromUserId === loggedInUser.id ? conn.toUser : conn.fromUser;
+        });
+
+        res.json({ message: "Connections successfully fetched", connections: connectedUsers });
     } catch (err) {
         res.status(500).json({ message: "Internal Server Error", err: err.message });
     }

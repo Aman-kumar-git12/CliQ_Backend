@@ -47,7 +47,7 @@ app.get("/users", async (req, res) => {
 
 
 
-server.listen(2003, (err) => {
+server.listen(2002, (err) => {
   console.log("Server is running on port 2002");
 });
 
