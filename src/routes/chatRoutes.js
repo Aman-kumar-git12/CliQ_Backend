@@ -12,4 +12,5 @@ chatRouter.delete("/chat/conversation/:targetUserId", userAuth, chatController.h
 chatRouter.post("/chat/upload", userAuth, upload.single("file"), chatController.uploadFile);
 chatRouter.post("/chat/delete-bulk", userAuth, chatController.deleteMessagesBulk);
 
+
 module.exports = chatRouter;
