@@ -3,14 +3,12 @@ uvicorn
 pydantic
 langchain
 langchain-community
-faiss-cpu
-openai
-python-dotenv
 langchain-groq
 langchain-huggingface
 langchain-classic
 langchain-core
 langchain-text-splitters
-langchain-chroma
-langchain-openai
 langchain-mongodb
+pymongo
+sentence-transformers
+python-dotenv
