@@ -11,6 +11,19 @@ const cors = require("cors");
 // socket 
 const http = require("http");
 const { initialiseSocket } = require("./socket/socket");
+const { createProxyMiddleware } = require('http-proxy-middleware');
+
+// Proxy /api/chat to the LLM service
+app.use(
+  '/api/chat',
+  createProxyMiddleware({
+    target: process.env.LLM_SERVICE_URL || 'http://localhost:8000',
+    changeOrigin: true,
+    pathRewrite: {
+      '^/api/chat': '/api/chat', // keep the path the same or adjust as needed
+    },
+  })
+);
 
 
 
