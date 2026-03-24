@@ -36,6 +36,7 @@ model Users {
   conversationsIds String[] @db.ObjectId
   conversations Conversation[] @relation(fields: [conversationsIds], references: [id])
   messages      Message[]
+  aiChatSessions AIChatSession[]
 }
 
 enum ConnectionStatus {
@@ -158,4 +159,27 @@ model Report {
 
   commentId String?  @db.ObjectId
   comment   Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+}
+
+model AIChatSession {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  title     String   @default("New Chat")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  isDeleted Boolean  @default(false)
+
+  userId    String   @db.ObjectId
+  user      Users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  messages  AIChatMessage[]
+}
+
+model AIChatMessage {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  role      String   // "user" or "ai"
+  text      String
+  createdAt DateTime @default(now())
+
+  sessionId String   @db.ObjectId
+  session   AIChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }

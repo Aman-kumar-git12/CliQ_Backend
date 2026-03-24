@@ -8,3 +8,8 @@ node_modules/
 
 # Notes file
 notes.md
+
+llm/__pycache__
+llm/routes/__pycache__
+llm/rag/__pycache__
+llm/core/__pycache__

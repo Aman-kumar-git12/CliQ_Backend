@@ -47,8 +47,9 @@ app.get("/users", async (req, res) => {
 
 
 
-server.listen(2002, (err) => {
-  console.log("Server is running on port 2002");
+const port = process.env.PORT || 2002;
+server.listen(port, (err) => {
+  console.log(`Server is running on port ${port}`);
 });
 
 module.exports = server;

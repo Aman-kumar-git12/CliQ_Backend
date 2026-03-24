@@ -9,6 +9,7 @@ const postRoutes = require("./postRoutes");
 const searchRoutes = require("./searchRoutes");
 const myConnectionRoutes = require("./myConnectionRoutes");
 const chatRoutes = require("./chatRoutes");
+const aiChatRoutes = require("./aiChatRoutes");
 
 router.use("/", authRoutes);
 router.use("/", profileRoutes);
@@ -18,5 +19,6 @@ router.use("/", postRoutes);
 router.use("/", searchRoutes);
 router.use("/", myConnectionRoutes);
 router.use("/", chatRoutes);
+router.use("/", aiChatRoutes);
 
 module.exports = router;
