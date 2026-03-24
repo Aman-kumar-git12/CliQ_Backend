@@ -14,3 +14,7 @@ app.add_middleware(
 )
 
 app.include_router(chat_router, prefix="/api")
+
+@app.get("/")
+def read_root():
+    return {"status": "ok", "message": "AI LLM Service is running"}
