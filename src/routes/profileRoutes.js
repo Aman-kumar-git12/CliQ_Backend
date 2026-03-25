@@ -10,5 +10,6 @@ profileRouter.put("/profile/edit", userAuth, validateProfileEdit, profileControl
 profileRouter.delete("/profile/delete", userAuth, profileController.deleteProfile);
 profileRouter.put("/profile/image", userAuth, upload.single("image"), profileController.updateProfileImage);
 profileRouter.put("/profile/expertise", userAuth, profileController.updateExpertise);
+profileRouter.post("/generate-ai-expertise", userAuth, profileController.generateAIExpertise);
 
 module.exports = profileRouter;
