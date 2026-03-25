@@ -19,7 +19,19 @@ const createSession = async (req, res) => {
     try {
         const userId = req.user.id;
         const session = await prisma.aIChatSession.create({
-            data: { userId, title: "New Chat" }
+            data: { 
+                userId, 
+                title: "New Chat",
+                messages: {
+                    create: {
+                        role: 'ai',
+                        text: "Hii i am Cliq ai agent , How can i assist you 🙂?"
+                    }
+                }
+            },
+            include: {
+                messages: true
+            }
         });
         res.status(201).json({ session });
     } catch (error) {

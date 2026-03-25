@@ -15,12 +15,12 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 
 // Proxy /api/chat to the LLM service
 app.use(
-  '/api/chat',
+  '/api/agent',
   createProxyMiddleware({
     target: process.env.LLM_SERVICE_URL || 'http://localhost:8000',
     changeOrigin: true,
     pathRewrite: {
-      '^/api/chat': '/api/chat', // keep the path the same or adjust as needed
+      '^/': '/api/', 
     },
   })
 );
@@ -60,7 +60,7 @@ app.get("/users", async (req, res) => {
 
 
 
-const port = process.env.PORT || 2002;
+const port = process.env.PORT || 2001;
 server.listen(port, (err) => {
   console.log(`Server is running on port ${port}`);
 });
