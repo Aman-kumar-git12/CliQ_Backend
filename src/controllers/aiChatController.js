@@ -19,8 +19,8 @@ const createSession = async (req, res) => {
     try {
         const userId = req.user.id;
         const session = await prisma.aIChatSession.create({
-            data: { 
-                userId, 
+            data: {
+                userId,
                 title: "New Chat",
                 messages: {
                     create: {
@@ -44,7 +44,7 @@ const getHistoryBySessionId = async (req, res) => {
     try {
         const { sessionId } = req.params;
         const userId = req.user.id;
-        
+
         // Verify ownership
         const session = await prisma.aIChatSession.findFirst({
             where: { id: sessionId, userId, isDeleted: false }
@@ -55,7 +55,7 @@ const getHistoryBySessionId = async (req, res) => {
             where: { sessionId },
             orderBy: { createdAt: 'asc' }
         });
-        
+
         const messages = history.map(msg => ({
             id: msg.id,
             role: msg.role,
@@ -73,7 +73,7 @@ const saveMessage = async (req, res) => {
     try {
         const userId = req.user.id;
         const { sessionId, role, text } = req.body;
-        
+
         if (!sessionId || !role || !text) {
             return res.status(400).json({ error: "Missing sessionId, role, or text" });
         }

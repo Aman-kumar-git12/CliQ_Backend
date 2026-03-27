@@ -2,6 +2,42 @@ const { prisma } = require("../../prisma/prismaClient");
 const bcrypt = require("bcrypt");
 const cloudinary = require("../upload/cloudinary");
 const axios = require("axios");
+const redisClient = require("../config/redisClient");
+
+const getRecommendationCacheKey = (userId) => `smart_recommendations:v3:${userId}`;
+
+const clearRecommendationCacheForUser = async (userId) => {
+    if (!userId) return;
+
+    try {
+        if (redisClient?.isReady) {
+            await redisClient.del(getRecommendationCacheKey(userId));
+        }
+    } catch (error) {
+        console.error("Failed to clear recommendation cache:", error.message);
+    }
+};
+
+const precomputeProfileEmbedding = (userId, expertise) => {
+    const agentUrl = process.env.LLM_SERVICE_URL || "http://localhost:8000";
+
+    Promise.resolve()
+        .then(() =>
+            axios.post(
+                `${agentUrl}/api/match/precompute`,
+                {
+                    profileId: userId,
+                    profile: expertise || {},
+                },
+                {
+                    timeout: 2000,
+                }
+            )
+        )
+        .catch((error) => {
+            console.error("Profile embedding precompute failed:", error.message);
+        });
+};
 
 const sanitizeText = (value, fallback = "") => {
     if (typeof value !== "string") return fallback;
@@ -213,6 +249,9 @@ const updateExpertise = async (req, res) => {
                 expertise: expertiseObj
             }
         });
+
+        await clearRecommendationCacheForUser(userId);
+        precomputeProfileEmbedding(userId, updatedUser.expertise);
 
         return res.json({
             message: "Expertise saved successfully",
