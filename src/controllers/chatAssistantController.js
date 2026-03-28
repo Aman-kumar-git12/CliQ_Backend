@@ -11,6 +11,9 @@ const REPLY_TIMEOUT_MS = parsePositiveInt(process.env.MESSAGE_ASSISTANT_REPLY_TI
 const STREAM_TIMEOUT_MS = parsePositiveInt(process.env.MESSAGE_ASSISTANT_STREAM_TIMEOUT_MS || process.env.MESSAGE_ASSISTANT_TIMEOUT_MS, 30000);
 const ASSISTANT_RETRY_COUNT = Math.max(0, parsePositiveInt(process.env.MESSAGE_ASSISTANT_RETRY_COUNT, 2) - 1);
 const MAX_CONTEXT_MESSAGES = 40;
+const ASK_MODE_RECENT_MESSAGES = parsePositiveInt(process.env.MESSAGE_ASSISTANT_ASK_CONTEXT_MESSAGES, 15);
+const REPLY_MODE_RECENT_MESSAGES = parsePositiveInt(process.env.MESSAGE_ASSISTANT_REPLY_CONTEXT_MESSAGES, 20);
+const MAX_ASSISTANT_HISTORY_TURNS = parsePositiveInt(process.env.MESSAGE_ASSISTANT_HISTORY_TURNS, 12);
 const MAX_INPUT_CHARS = parsePositiveInt(process.env.MESSAGE_ASSISTANT_MAX_INPUT_CHARS, 1200);
 const ALLOWED_TONES = new Set([
     "casual",
@@ -93,6 +96,14 @@ const normalizeAssistantTone = (value = "") => {
     const tone = String(value || "polite").trim().toLowerCase();
     return ALLOWED_TONES.has(tone) ? tone : "polite";
 };
+const normalizeAssistantHistory = (history = []) =>
+    (Array.isArray(history) ? history : [])
+        .slice(-MAX_ASSISTANT_HISTORY_TURNS)
+        .map((turn) => ({
+            role: turn?.role === "user" ? "user" : "ai",
+            text: normalizeAssistantText(turn?.text),
+        }))
+        .filter((turn) => turn.text);
 
 const applyAssistantSafetyPolicy = ({ requestedTone, userAge, targetAge }) => {
     const tone = normalizeAssistantTone(requestedTone);
@@ -144,6 +155,8 @@ const getMessageAssistant = async (req, res) => {
         const mode = req.body?.mode === "ask" ? "ask" : "replies";
         const question = normalizeAssistantText(req.body?.question);
         const requestedTone = typeof req.body?.tone === "string" && req.body.tone.trim() ? req.body.tone.trim() : "polite";
+        const assistantHistory = normalizeAssistantHistory(req.body?.assistant_history);
+        const recentContextLimit = mode === "ask" ? ASK_MODE_RECENT_MESSAGES : REPLY_MODE_RECENT_MESSAGES;
 
         const conversation = await prisma.conversation.findFirst({
             where: {
@@ -171,8 +184,8 @@ const getMessageAssistant = async (req, res) => {
         ]);
 
         const orderedMessages = [...messages].reverse();
-        const olderMessages = orderedMessages.slice(0, Math.max(0, orderedMessages.length - 20));
-        const recentMessages = orderedMessages.slice(-20);
+        const olderMessages = orderedMessages.slice(0, Math.max(0, orderedMessages.length - recentContextLimit));
+        const recentMessages = orderedMessages.slice(-recentContextLimit);
         const conversationContext = buildConversationContext(recentMessages, userId);
         const olderContext = buildOlderContext(olderMessages, userId);
         const contextPreview = buildContextPreview(recentMessages, userId);
@@ -192,6 +205,7 @@ const getMessageAssistant = async (req, res) => {
                     mode,
                     question,
                     older_context: olderContext,
+                    assistant_history: assistantHistory,
                     tone,
                     other_name: [targetUser?.firstname, targetUser?.lastname].filter(Boolean).join(" ").trim() || "the other person",
                     max_suggestions: 5,
@@ -253,6 +267,7 @@ const streamMessageAssistant = async (req, res) => {
         const { targetuserId } = req.params;
         const question = normalizeAssistantText(req.body?.question);
         const requestedTone = typeof req.body?.tone === "string" && req.body.tone.trim() ? req.body.tone.trim() : "polite";
+        const assistantHistory = normalizeAssistantHistory(req.body?.assistant_history);
 
         const conversation = await prisma.conversation.findFirst({
             where: {
@@ -280,8 +295,8 @@ const streamMessageAssistant = async (req, res) => {
         ]);
 
         const orderedMessages = [...messages].reverse();
-        const olderMessages = orderedMessages.slice(0, Math.max(0, orderedMessages.length - 20));
-        const recentMessages = orderedMessages.slice(-20);
+        const olderMessages = orderedMessages.slice(0, Math.max(0, orderedMessages.length - ASK_MODE_RECENT_MESSAGES));
+        const recentMessages = orderedMessages.slice(-ASK_MODE_RECENT_MESSAGES);
         const conversationContext = buildConversationContext(recentMessages, userId);
         const olderContext = buildOlderContext(olderMessages, userId);
         const { tone } = applyAssistantSafetyPolicy({
@@ -297,6 +312,7 @@ const streamMessageAssistant = async (req, res) => {
                 mode: "ask",
                 question,
                 older_context: olderContext,
+                assistant_history: assistantHistory,
                 tone,
                 other_name: [targetUser?.firstname, targetUser?.lastname].filter(Boolean).join(" ").trim() || "the other person",
             },

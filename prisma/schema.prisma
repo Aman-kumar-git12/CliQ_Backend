@@ -13,6 +13,17 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  user
+  admin
+}
+
+enum UnblockRequestStatus {
+  pending
+  approved
+  rejected
+}
+
 model Users {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   firstname String
@@ -20,6 +31,8 @@ model Users {
   email     String   @unique
   age       Int
   password  String
+  role      UserRole @default(user)
+  isBlocked Boolean  @default(false)
   imageUrl  String? @default("https://cyber.comolho.com/static/img/avatar.png")
   expertise Json?
   createdAt DateTime @default(now())
@@ -37,6 +50,20 @@ model Users {
   conversations Conversation[] @relation(fields: [conversationsIds], references: [id])
   messages      Message[]
   aiChatSessions AIChatSession[]
+  unblockRequests UnblockRequest[]
+}
+
+model UnblockRequest {
+  id          String               @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String               @db.ObjectId
+  message     String
+  status      UnblockRequestStatus @default(pending)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  user        Users                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
 }
 
 enum RecommendationEventType {

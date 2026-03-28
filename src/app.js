@@ -69,12 +69,12 @@ app.get("/users", async (req, res) => {
   res.json(users);
 });
 
-const parsePort = (value, fallback = 2001) => {
+const parsePort = (value, fallback = 2003) => {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
-const basePort = parsePort(process.env.PORT, 2001);
+const basePort = parsePort(process.env.PORT, 2003);
 const maxPortRetries = parsePort(process.env.PORT_RETRY_COUNT, 10);
 let activePort = basePort;
 
