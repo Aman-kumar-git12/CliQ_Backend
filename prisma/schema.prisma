@@ -197,6 +197,36 @@ model AIChatMessage {
   session   AIChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
+model MessageAIReplyHistory {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String   @db.ObjectId
+  targetUserId   String   @db.ObjectId
+  conversationId String?  @db.ObjectId
+  contextSummary String
+  lastMessage    String
+  sentReply      String
+  tone           String?
+  detectedIntent String?
+  topReply       String?
+  generatedReplies Json?
+  createdAt      DateTime @default(now())
+
+  @@index([userId, targetUserId, createdAt])
+  @@index([conversationId, createdAt])
+}
+
+model MessageAIAskHistory {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String   @db.ObjectId
+  targetUserId String   @db.ObjectId
+  question     String
+  answer       String
+  messages     Json?
+  createdAt    DateTime @default(now())
+
+  @@index([userId, targetUserId, createdAt])
+}
+
 model RecommendationEvent {
   id              String                  @id @default(auto()) @map("_id") @db.ObjectId
   userId          String                  @db.ObjectId
