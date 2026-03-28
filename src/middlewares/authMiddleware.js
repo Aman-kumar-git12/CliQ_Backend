@@ -43,6 +43,16 @@ const authenticateUser = async (req, res, next) => {
     }
 };
 
+const optionalUserAuth = async (req, res, next) => {
+    try {
+        req.user = await getAuthenticatedUser(req);
+    } catch (err) {
+        req.user = null;
+    }
+
+    next();
+};
+
 const requireActiveUser = (req, res, next) => {
     if (!req.user) {
         return handleAuthError(res, buildAuthError("Authentication required", 401));
@@ -105,6 +115,7 @@ const adminAuth = async (req, res, next) => {
 
 module.exports = {
     authenticateUser,
+    optionalUserAuth,
     requireActiveUser,
     requireRole,
     userAuth,

@@ -247,6 +247,9 @@ const sendRequest = async (req, res) => {
             data
         });
     } catch (err) {
+        if (err?.code === "P2002") {
+            return res.status(409).json({ message: "Connection already exists" });
+        }
         return res.status(500).json({ message: "Internal server error", error: err.message });
     }
 };

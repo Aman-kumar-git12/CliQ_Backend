@@ -39,8 +39,14 @@ model Users {
   password  String
   authProvider AuthProvider @default(local)
   googleId   String?  @unique
+  emailVerified Boolean @default(false)
   role      UserRole @default(user)
   isBlocked Boolean  @default(false)
+  blockedAt DateTime?
+  blockedReason String?
+  lastLoginAt DateTime?
+  deletedAt DateTime?
+  tokenVersion Int @default(0)
   imageUrl  String? @default("https://cyber.comolho.com/static/img/avatar.png")
   expertise Json?
   createdAt DateTime @default(now())
@@ -104,6 +110,10 @@ model ConnectionsRequest {
 
   fromUser Users @relation("sentRequests", fields: [fromUserId], references: [id] , onDelete: Cascade)
   toUser   Users @relation("receivedRequests", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@unique([fromUserId, toUserId])
+  @@index([fromUserId, status])
+  @@index([toUserId, status])
 }
 
 model Post {

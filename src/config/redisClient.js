@@ -4,16 +4,45 @@ const redisClient = createClient({
     url: process.env.REDIS_URL || 'redis://127.0.0.1:6379'
 });
 
-redisClient.on('error', (err) => console.log('Redis Client Error', err));
-redisClient.on('connect', () => console.log('Redis Client Connected'));
+let connectPromise = null;
+let redisUnavailableLogged = false;
 
-// Connect immediately
-(async () => {
-    try {
-        await redisClient.connect();
-    } catch (err) {
-        console.error('Failed to connect to Redis on startup:', err);
+redisClient.on('error', (err) => {
+    if (!redisUnavailableLogged) {
+        console.log('Redis Client Error', err.message || err);
+        redisUnavailableLogged = true;
     }
-})();
+});
+redisClient.on('connect', () => console.log('Redis Client Connected'));
+redisClient.on('ready', () => {
+    redisUnavailableLogged = false;
+});
+
+const ensureRedisReady = async () => {
+    if (redisClient.isReady) {
+        return true;
+    }
+
+    if (connectPromise) {
+        return connectPromise;
+    }
+
+    connectPromise = redisClient.connect()
+        .then(() => true)
+        .catch((err) => {
+            if (!redisUnavailableLogged) {
+                console.error('Redis unavailable, continuing without Redis cache:', err.message || err);
+                redisUnavailableLogged = true;
+            }
+            return false;
+        })
+        .finally(() => {
+            connectPromise = null;
+        });
+
+    return connectPromise;
+};
+
+redisClient.ensureReady = ensureRedisReady;
 
 module.exports = redisClient;

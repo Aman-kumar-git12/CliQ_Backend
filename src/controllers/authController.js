@@ -8,6 +8,14 @@ const UNBLOCK_REQUEST_COOLDOWN_MS = 60 * 60 * 1000;
 
 const getMe = async (req, res) => {
     try {
+        if (!req.user) {
+            return res.json({ user: null });
+        }
+
+        if (req.user.isBlocked) {
+            return res.status(403).json({ message: "Your account has been blocked. Please contact support." });
+        }
+
         const user = await prisma.users.findUnique({
             where: { id: req.user.id },
             select: safeUserSelect,

@@ -1,4 +1,5 @@
 const axios = require("axios");
+const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const { prisma } = require("../../prisma/prismaClient");
 
@@ -16,12 +17,23 @@ const getGoogleConfig = () => {
     return { id: GOOGLE_CLIENT_ID, secret: GOOGLE_CLIENT_SECRET, redirect: GOOGLE_REDIRECT_URI };
 };
 
+const getAllowedFrontendOrigins = () =>
+    String(process.env.FRONTEND_URL || "http://localhost:5173")
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean);
+
 const getFrontendUrl = (state) => {
+    const allowedOrigins = getAllowedFrontendOrigins();
+    const fallbackOrigin = allowedOrigins[0] || "http://localhost:5173";
+
     try {
         const decoded = JSON.parse(Buffer.from(state || "", "base64url").toString("utf-8"));
-        if (decoded.origin) return decoded.origin;
+        if (decoded.origin && allowedOrigins.includes(decoded.origin)) {
+            return decoded.origin;
+        }
     } catch (e) {}
-    return (process.env.FRONTEND_URL || "http://localhost:5173").split(",")[0].trim();
+    return fallbackOrigin;
 };
 
 const issueToken = (res, user) => {
@@ -34,13 +46,33 @@ const issueToken = (res, user) => {
     });
 };
 
+const getNextAuthProvider = (provider) => {
+    if (provider === "google" || provider === "hybrid") {
+        return provider;
+    }
+
+    return "hybrid";
+};
+
 const googleAuthStart = (req, res) => {
     try {
         const config = getGoogleConfig();
-        const origin = req.headers.referer ? new URL(req.headers.referer).origin : null;
+        const allowedOrigins = getAllowedFrontendOrigins();
+        let origin = null;
+
+        try {
+            origin = req.headers.referer ? new URL(req.headers.referer).origin : null;
+        } catch (error) {
+            origin = null;
+        }
+
+        const safeOrigin = origin && allowedOrigins.includes(origin)
+            ? origin
+            : (allowedOrigins[0] || "http://localhost:5173");
+
         const state = Buffer.from(JSON.stringify({ 
             mode: req.query.mode || "signin",
-            origin: origin || (process.env.FRONTEND_URL || "http://localhost:5173").split(",")[0]
+            origin: safeOrigin
         })).toString("base64url");
 
         const url = new URL(GOOGLE_URLS.auth);
@@ -69,17 +101,48 @@ const googleAuthCallback = async (req, res) => {
 
         const { data: gUser } = await axios.get(GOOGLE_URLS.user, { headers: { Authorization: `Bearer ${tokens.access_token}` } });
         const email = gUser.email.toLowerCase();
-
-        const user = await prisma.users.upsert({
+        const existingUser = await prisma.users.findUnique({
             where: { email },
-            update: { googleId: gUser.sub, imageUrl: gUser.picture || undefined },
-            create: {
-                email, firstname: gUser.given_name || "User", lastname: gUser.family_name || "",
-                password: "oauth-placeholder", authProvider: "google", googleId: gUser.sub,
-                imageUrl: gUser.picture || undefined, age: 18, role: "user",
-                expertise: { name: gUser.name, email }, conversationsIds: []
-            }
         });
+
+        if (existingUser?.isBlocked) {
+            return res.redirect(`${frontendUrl}/blocked-account?message=${encodeURIComponent("Your account has been blocked. Please contact support.")}&email=${encodeURIComponent(email)}`);
+        }
+
+        let user;
+
+        if (!existingUser) {
+            const passwordHash = await bcrypt.hash(`google-oauth:${gUser.sub}:${Date.now()}`, 10);
+
+            user = await prisma.users.create({
+                data: {
+                    email,
+                    firstname: gUser.given_name || "User",
+                    lastname: gUser.family_name || "",
+                    password: passwordHash,
+                    authProvider: "google",
+                    googleId: gUser.sub,
+                    imageUrl: gUser.picture || undefined,
+                    age: 18,
+                    role: "user",
+                    expertise: { name: gUser.name, email },
+                    conversationsIds: [],
+                },
+            });
+        } else {
+            if (existingUser.googleId && existingUser.googleId !== gUser.sub) {
+                return res.redirect(`${frontendUrl}/login?authError=${encodeURIComponent("This Google account does not match the linked account for this email.")}`);
+            }
+
+            user = await prisma.users.update({
+                where: { id: existingUser.id },
+                data: {
+                    googleId: existingUser.googleId || gUser.sub,
+                    imageUrl: gUser.picture || existingUser.imageUrl,
+                    authProvider: getNextAuthProvider(existingUser.authProvider),
+                },
+            });
+        }
 
         issueToken(res, user);
         res.redirect(`${frontendUrl}/home`);
