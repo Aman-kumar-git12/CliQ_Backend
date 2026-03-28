@@ -1,5 +1,8 @@
 const dotenv = require('dotenv');
-const dotenvResult = dotenv.config();
+const path = require("path");
+const dotenvResult = dotenv.config({
+  path: path.resolve(__dirname, "../.env"),
+});
 
 // Global crash prevention - MUST be at the top
 process.on('uncaughtException', (err) => {

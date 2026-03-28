@@ -1,6 +1,7 @@
 const { prisma } = require("../../prisma/prismaClient");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const { safeUserSelect, toSafeUser } = require("../utils/authUtils");
 
 const MAX_UNBLOCK_REQUESTS_PER_ACCOUNT = 5;
 const UNBLOCK_REQUEST_COOLDOWN_MS = 60 * 60 * 1000;
@@ -9,18 +10,7 @@ const getMe = async (req, res) => {
     try {
         const user = await prisma.users.findUnique({
             where: { id: req.user.id },
-            select: {
-                id: true,
-                firstname: true,
-                lastname: true,
-                email: true,
-                age: true,
-                role: true,
-                isBlocked: true,
-                imageUrl: true,
-                createdAt: true,
-                updatedAt: true,
-            },
+            select: safeUserSelect,
         });
 
         return res.json({ user });
@@ -39,7 +29,12 @@ const signup = async (req, res) => {
             where: { email },
         });
         if (existingUser) {
-            return res.status(400).json({ message: "User already exists" });
+            const message = existingUser.authProvider === "google"
+                ? "An account with this email already exists with Google sign-in. Please continue with Google."
+                : existingUser.authProvider === "hybrid"
+                    ? "This email is already registered. You can continue with password or Google."
+                    : "User already exists";
+            return res.status(400).json({ message });
         }
 
         const defaultExpertise = {
@@ -65,6 +60,7 @@ const signup = async (req, res) => {
                 email,
                 age: isNaN(parseInt(age)) ? 18 : parseInt(age),
                 password: passwordHash,
+                authProvider: "local",
                 role: "user",
                 isBlocked: false,
                 expertise: defaultExpertise,
@@ -85,7 +81,7 @@ const signup = async (req, res) => {
             maxAge: 24 * 60 * 60 * 1000,
         });
 
-        res.json({ message: "User created successfully", user });
+        res.json({ message: "User created successfully", user: toSafeUser(user) });
     } catch (err) {
         console.error("Signup error details:", err);
         res.status(500).json({ message: "Internal server error", error: err.message });
@@ -101,6 +97,10 @@ const login = async (req, res) => {
         });
         if (!user) {
             return res.status(401).json({ message: "Invalid credentials" });
+        }
+
+        if (user.authProvider === "google") {
+            return res.status(400).json({ message: "This account uses Google sign-in. Please continue with Google." });
         }
 
         if (user.isBlocked) {
@@ -125,7 +125,7 @@ const login = async (req, res) => {
             maxAge: 24 * 60 * 60 * 1000,
         });
 
-        return res.send({ message: "Login successful", user });
+        return res.send({ message: "Login successful", user: toSafeUser(user) });
     } catch (err) {
         res.status(500).json({
             message: "Internal server error",

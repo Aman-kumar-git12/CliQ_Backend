@@ -1,12 +1,16 @@
 const jwt = require("jsonwebtoken");
 const { prisma } = require("../../prisma/prismaClient");
 
-const getAuthenticatedUser = async (req, { allowBlocked = false } = {}) => {
+const buildAuthError = (message, status = 401) => {
+    const error = new Error(message);
+    error.status = status;
+    return error;
+};
+
+const getAuthenticatedUser = async (req) => {
     const token = req.cookies.auth_token;
     if (!token) {
-        const error = new Error("You are Unauthorized, Please Login...");
-        error.status = 401;
-        throw error;
+        throw buildAuthError("You are Unauthorized, Please Login...", 401);
     }
 
     const decodedObj = jwt.verify(token, process.env.JWT_SECRET_KEY);
@@ -17,36 +21,93 @@ const getAuthenticatedUser = async (req, { allowBlocked = false } = {}) => {
     });
 
     if (!user) {
-        const error = new Error("User not found");
-        error.status = 401;
-        throw error;
-    }
-
-    if (user.isBlocked && !allowBlocked) {
-        const error = new Error("Your account has been blocked. Please contact support.");
-        error.status = 403;
-        throw error;
+        throw buildAuthError("User not found", 401);
     }
 
     return user;
 };
 
-const userAuth = async (req, res, next) => {
+const handleAuthError = (res, err) => {
+    res.status(err.status || 401).json({
+        message: err.message || "Authentication Error",
+        error: err.message,
+    });
+};
+
+const authenticateUser = async (req, res, next) => {
     try {
         req.user = await getAuthenticatedUser(req);
         next();
     } catch (err) {
-        res.status(err.status || 401).json({ message: err.message || "Authentication Error", error: err.message });
+        handleAuthError(res, err);
+    }
+};
+
+const requireActiveUser = (req, res, next) => {
+    if (!req.user) {
+        return handleAuthError(res, buildAuthError("Authentication required", 401));
+    }
+
+    if (req.user.isBlocked) {
+        return handleAuthError(res, buildAuthError("Your account has been blocked. Please contact support.", 403));
+    }
+
+    return next();
+};
+
+const requireRole = (...roles) => (req, res, next) => {
+    if (!req.user) {
+        return handleAuthError(res, buildAuthError("Authentication required", 401));
+    }
+
+    if (!roles.includes(req.user.role)) {
+        return handleAuthError(res, buildAuthError("You are not authorized to access this resource.", 403));
+    }
+
+    return next();
+};
+
+const userAuth = async (req, res, next) => {
+    try {
+        req.user = await getAuthenticatedUser(req);
+        if (req.user.isBlocked) {
+            throw buildAuthError("Your account has been blocked. Please contact support.", 403);
+        }
+        next();
+    } catch (err) {
+        handleAuthError(res, err);
     }
 };
 
 const userAuthAllowBlocked = async (req, res, next) => {
     try {
-        req.user = await getAuthenticatedUser(req, { allowBlocked: true });
+        req.user = await getAuthenticatedUser(req);
         next();
     } catch (err) {
-        res.status(err.status || 401).json({ message: err.message || "Authentication Error", error: err.message });
+        handleAuthError(res, err);
     }
 };
 
-module.exports = { userAuth, userAuthAllowBlocked };
+const adminAuth = async (req, res, next) => {
+    try {
+        req.user = await getAuthenticatedUser(req);
+        if (req.user.isBlocked) {
+            throw buildAuthError("Your account has been blocked. Please contact support.", 403);
+        }
+        if (req.user.role !== "admin") {
+            throw buildAuthError("You are not authorized to access this resource.", 403);
+        }
+        next();
+    } catch (err) {
+        handleAuthError(res, err);
+    }
+};
+
+module.exports = {
+    authenticateUser,
+    requireActiveUser,
+    requireRole,
+    userAuth,
+    userAuthAllowBlocked,
+    adminAuth,
+};

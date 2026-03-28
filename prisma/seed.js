@@ -10,6 +10,7 @@ async function main() {
             email: "aman@example.com",
             age: 21,
             password: "hashedpassword",
+            authProvider: "local",
             role: "user",
             isBlocked: false,
             posts: {

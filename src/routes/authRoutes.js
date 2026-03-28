@@ -8,7 +8,8 @@ const { validateSignupData } = require("../middlewares/validationMiddleware");
 authRouter.get("/auth/me", userAuth, authController.getMe);
 authRouter.post("/signup", validateSignupData, authController.signup);
 authRouter.post("/login", authController.login);
-authRouter.post("/auth/google", googleAuthController.googleAuth);
+authRouter.get("/auth/google", googleAuthController.googleAuthStart);
+authRouter.get("/auth/google/callback", googleAuthController.googleAuthCallback);
 authRouter.post("/logout", authController.logout);
 authRouter.post("/auth/unblock-request", authController.createUnblockRequest);
 
