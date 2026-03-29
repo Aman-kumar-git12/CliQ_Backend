@@ -1,7 +1,7 @@
 const express = require("express");
 const userRouter = express.Router();
 const userController = require("../controllers/userController");
-const { userAuth } = require("../middlewares/authMiddleware");
+const { userAuth, adminAuth } = require("../middlewares/authMiddleware");
 
 userRouter.get("/user/requests", userAuth, userController.getRequests);
 userRouter.get("/user/connections", userAuth, userController.getConnections);
@@ -9,5 +9,6 @@ userRouter.get("/user/public/connections/:userId", userAuth, userController.getP
 userRouter.delete("/user/connections/cancel/:toUserId", userAuth, userController.cancelRequest);
 userRouter.delete("/user/connections/unfriend/:otherUserId", userAuth, userController.unfriend);
 userRouter.get("/user/feed", userAuth, userController.getFeed);
+userRouter.get("/users", adminAuth, userController.getAllUsers);
 
 module.exports = userRouter;

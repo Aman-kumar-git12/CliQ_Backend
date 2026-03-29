@@ -1,4 +1,5 @@
 const { prisma } = require("../../prisma/prismaClient");
+const { publicUserSelect, toPublicUser } = require("../utils/authUtils");
 
 const getSuggestedUsers = async (req, res) => {
     try {
@@ -34,6 +35,7 @@ const getSuggestedUsers = async (req, res) => {
 
         const users = await prisma.users.findMany({
             where: { id: { notIn: excludedArray } },
+            select: publicUserSelect,
             skip: skip,
             take: 5,
         });
@@ -53,7 +55,8 @@ const searchUserByName = async (req, res) => {
                     { firstname: { contains: name, mode: "insensitive" } },
                     { lastname: { contains: name, mode: "insensitive" } }
                 ]
-            }
+            },
+            select: publicUserSelect,
         });
 
         if (!users || users.length === 0) {
@@ -75,7 +78,8 @@ const getUserById = async (req, res) => {
         }
 
         const user = await prisma.users.findUnique({
-            where: { id }
+            where: { id },
+            select: publicUserSelect,
         });
 
         if (!user) {
@@ -104,7 +108,7 @@ const getUserById = async (req, res) => {
         });
 
         const userWithStats = {
-            ...user,
+            ...toPublicUser(user),
             postsCount,
             connectionsCount: connectionCount,
             groupsCount

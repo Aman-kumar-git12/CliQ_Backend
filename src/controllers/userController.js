@@ -1,4 +1,5 @@
 const { prisma } = require("../../prisma/prismaClient");
+const { safeUserSelect } = require("../utils/authUtils");
 
 const getRequests = async (req, res) => {
     try {
@@ -207,11 +208,23 @@ const getPublicUserConnections = async (req, res) => {
     }
 };
 
+const getAllUsers = async (req, res) => {
+    try {
+        const users = await prisma.users.findMany({
+            select: safeUserSelect,
+        });
+        res.json(users);
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message });
+    }
+};
+
 module.exports = {
     getRequests,
     getConnections,
     cancelRequest,
     unfriend,
     getFeed,
-    getPublicUserConnections
+    getPublicUserConnections,
+    getAllUsers
 };

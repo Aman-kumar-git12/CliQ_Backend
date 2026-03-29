@@ -1,37 +1,101 @@
 const SocketIO = require("socket.io")
+const jwt = require("jsonwebtoken");
 const { prisma } = require("../../prisma/prismaClient");
 const redisClient = require("../config/redisClient");
 
 let io;
 
+const getAllowedOrigins = () =>
+    String(process.env.FRONTEND_URL || "http://localhost:5173")
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean);
+
+const parseCookies = (cookieHeader = "") =>
+    String(cookieHeader || "")
+        .split(";")
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .reduce((acc, part) => {
+            const separatorIndex = part.indexOf("=");
+            if (separatorIndex === -1) return acc;
+
+            const key = part.slice(0, separatorIndex).trim();
+            const value = decodeURIComponent(part.slice(separatorIndex + 1).trim());
+            if (key) {
+                acc[key] = value;
+            }
+            return acc;
+        }, {});
+
+const authenticateSocket = async (socket) => {
+    const cookies = parseCookies(socket.handshake?.headers?.cookie);
+    const token = cookies.auth_token;
+    if (!token) {
+        throw new Error("Authentication required");
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY);
+    const user = await prisma.users.findUnique({
+        where: { id: decoded.userId },
+        select: {
+            id: true,
+            firstname: true,
+            lastname: true,
+            isBlocked: true,
+        }
+    });
+
+    if (!user) {
+        throw new Error("User not found");
+    }
+
+    if (user.isBlocked) {
+        throw new Error("Blocked users cannot use chat");
+    }
+
+    return user;
+};
+
 const initialiseSocket = (server) => {
 
     io = SocketIO(server, {
         cors: {
-            origin: process.env.FRONTEND_URL,
+            origin: getAllowedOrigins(),
+            credentials: true,
         },
+    });
+
+    io.use(async (socket, next) => {
+        try {
+            socket.data.user = await authenticateSocket(socket);
+            next();
+        } catch (error) {
+            next(new Error(error.message || "Authentication failed"));
+        }
     });
 
     io.on("connection", async (socket) => {
         console.log("user connected socketId: ", socket.id);
 
-        let currentUser = null; // Store user ID attached to this socket
+        const currentUser = socket.data.user;
+        const currentUserId = currentUser.id;
 
-        socket.on("userConnected", async ({ userId }) => {
-            if (!userId) return;
-            currentUser = userId;
+        socket.on("userConnected", async () => {
             // Mark online in Redis Hash 'userStatus'
             try {
-                await redisClient.hSet('userStatus', userId, 'online');
+                await redisClient.ensureReady();
+                await redisClient.hSet('userStatus', currentUserId, 'online');
                 // Broadcast to everyone that this user is online
-                io.emit("statusUpdate", { userId, status: 'online' });
-                console.log(`User ${userId} marked online`);
+                io.emit("statusUpdate", { userId: currentUserId, status: 'online' });
+                console.log(`User ${currentUserId} marked online`);
             } catch (e) { console.error("Redis Error:", e); }
         });
 
         socket.on("checkStatus", async ({ userId }, callback) => {
             if (!userId) return;
             try {
+                await redisClient.ensureReady();
                 const status = await redisClient.hGet('userStatus', userId);
                 if (callback) {
                     callback({ userId, status: status || null });
@@ -46,40 +110,51 @@ const initialiseSocket = (server) => {
             if (currentUser) {
                 const timestamp = Date.now().toString();
                 try {
-                    await redisClient.hSet('userStatus', currentUser, timestamp);
-                    io.emit("statusUpdate", { userId: currentUser, status: timestamp });
-                    console.log(`User ${currentUser} marked offline at ${timestamp}`);
+                    await redisClient.ensureReady();
+                    await redisClient.hSet('userStatus', currentUserId, timestamp);
+                    io.emit("statusUpdate", { userId: currentUserId, status: timestamp });
+                    console.log(`User ${currentUserId} marked offline at ${timestamp}`);
                 } catch (e) { console.error("Redis Error:", e); }
             }
         });
 
-        socket.on("joinChat", ({ firstname, userId, targetuserId }) => {
-            if (!userId || !targetuserId) {
-                console.warn("joinChat: Missing userId or targetuserId", { userId, targetuserId });
+        socket.on("joinChat", ({ targetuserId }) => {
+            if (!targetuserId) {
+                console.warn("joinChat: Missing targetuserId", { targetuserId });
                 return;
             }
             // TODO: Support group chat roomId logic if needed in future
-            const roomId = [userId, targetuserId].sort().join("_")
-            console.log(`[SOCKET] User ${firstname} (${socket.id}) joining room: ${roomId}`);
+            const roomId = [currentUserId, targetuserId].sort().join("_")
+            console.log(`[SOCKET] User ${currentUser.firstname} (${socket.id}) joining room: ${roomId}`);
             socket.join(roomId)
         })
 
-        socket.on("sendMessage", async ({ firstname, userId, targetuserId, text: newMessage, image, file, originalName, parentMessageId }, callback) => {
-            if (!userId || !targetuserId) {
-                console.error("sendMessage: Missing userId or targetuserId");
+        socket.on("sendMessage", async ({ targetuserId, text: newMessage, image, file, originalName, parentMessageId }, callback) => {
+            if (!targetuserId) {
+                console.error("sendMessage: Missing targetuserId");
                 return;
             }
 
-            const roomId = [userId, targetuserId].sort().join("_")
-            console.log(`sendMessage: ${firstname} to room ${roomId}: ${newMessage || "[attachment]"}`)
+            const roomId = [currentUserId, targetuserId].sort().join("_")
+            console.log(`sendMessage: ${currentUser.firstname} to room ${roomId}: ${newMessage || "[attachment]"}`)
 
             try {
+                const targetUser = await prisma.users.findUnique({
+                    where: { id: targetuserId },
+                    select: { id: true, isBlocked: true }
+                });
+
+                if (!targetUser || targetUser.isBlocked) {
+                    if (callback) callback({ success: false, error: "Recipient unavailable" });
+                    return;
+                }
+
                 // Find existing conversation
                 let conversation = await prisma.conversation.findFirst({
                     where: {
                         isGroup: false,
                         participantIds: {
-                            hasEvery: [userId, targetuserId]
+                            hasEvery: [currentUserId, targetuserId]
                         }
                     },
                     orderBy: { updatedAt: 'desc' }
@@ -90,9 +165,9 @@ const initialiseSocket = (server) => {
                     conversation = await prisma.conversation.create({
                         data: {
                             isGroup: false,
-                            participantIds: [userId, targetuserId],
+                            participantIds: [currentUserId, targetuserId],
                             participants: {
-                                connect: [{ id: userId }, { id: targetuserId }]
+                                connect: [{ id: currentUserId }, { id: targetuserId }]
                             }
                         }
                     });
@@ -105,7 +180,7 @@ const initialiseSocket = (server) => {
                         file: file || null,
                         originalName: originalName || null,
                         conversationId: conversation.id,
-                        senderId: userId,
+                        senderId: currentUserId,
                         status: "sent",
                         deletedById: [],
                         parentMessageId
@@ -124,8 +199,8 @@ const initialiseSocket = (server) => {
                 // Emit with DB id
                 io.to(roomId).emit("receiveMessage", {
                     id: savedMessage.id,
-                    senderId: userId,
-                    firstname: firstname || "User",
+                    senderId: currentUserId,
+                    firstname: currentUser.firstname || "User",
                     text: newMessage,
                     image: savedMessage.image,
                     file: savedMessage.file,

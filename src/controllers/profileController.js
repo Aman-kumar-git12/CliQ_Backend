@@ -1,6 +1,7 @@
 const { prisma } = require("../../prisma/prismaClient");
 const bcrypt = require("bcrypt");
 const cloudinary = require("../upload/cloudinary");
+const { toSafeUser } = require("../utils/authUtils");
 
 
 const getProfile = async (req, res) => {
@@ -66,7 +67,7 @@ const editProfile = async (req, res) => {
             where: { id: loggedInUser.id },
             data: updateData,
         });
-        res.json({ message: "Profile updated successfully", user: data });
+        res.json({ message: "Profile updated successfully", user: toSafeUser(data) });
     } catch (err) {
         res.status(500).json({ message: "Internal server error", error: err.message });
     }
