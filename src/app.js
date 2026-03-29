@@ -54,7 +54,7 @@ process.on('unhandledRejection', (reason) => {
 // 3. Security & Logging Middleware
 app.use(helmet({
     contentSecurityPolicy: false, // Managed manually below for dynamic backendPort
-})); 
+}));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev')); // HTTP request logging
 
 // 4. Rate Limiting
@@ -68,8 +68,8 @@ app.use("/api/", limiter); // Apply to all API routes
 // 5. CORS Configuration
 const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:5173").split(",").map(o => o.trim());
 app.use(cors({
-    origin: (origin, cb) => !origin || allowedOrigins.includes(origin) || allowedOrigins.includes("*") 
-        ? cb(null, true) 
+    origin: (origin, cb) => !origin || allowedOrigins.includes(origin) || allowedOrigins.includes("*")
+        ? cb(null, true)
         : cb(new Error("Not allowed by CORS")),
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
@@ -85,9 +85,9 @@ app.use((req, res, next) => {
     // Build connect-src dynamically from allowedOrigins
     const originsStr = allowedOrigins.join(" ");
     const connectSrc = `connect-src 'self' ${originsStr} http://localhost:${backendPort} http://localhost:8000 https://accounts.google.com https://openidconnect.googleapis.com/v1/userinfo;`;
-    
+
     // Set CSP (helmet sets defaults, we override specific ones)
-    res.setHeader("Content-Security-Policy", 
+    res.setHeader("Content-Security-Policy",
         `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://lh3.googleusercontent.com https://res.cloudinary.com; ${connectSrc}`
     );
     next();
