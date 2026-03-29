@@ -32,7 +32,7 @@ const getFrontendUrl = (state) => {
         if (decoded.origin && allowedOrigins.includes(decoded.origin)) {
             return decoded.origin;
         }
-    } catch (e) {}
+    } catch (e) { }
     return fallbackOrigin;
 };
 
@@ -42,7 +42,7 @@ const issueToken = (res, user) => {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-        maxAge: 86400000 
+        maxAge: 86400000
     });
 };
 
@@ -70,7 +70,7 @@ const googleAuthStart = (req, res) => {
             ? origin
             : (allowedOrigins[0] || "http://localhost:5173");
 
-        const state = Buffer.from(JSON.stringify({ 
+        const state = Buffer.from(JSON.stringify({
             mode: req.query.mode || "signin",
             origin: safeOrigin
         })).toString("base64url");
@@ -94,7 +94,7 @@ const googleAuthCallback = async (req, res) => {
     try {
         const { code } = req.query;
         const config = getGoogleConfig();
-        
+
         const { data: tokens } = await axios.post(GOOGLE_URLS.token, new URLSearchParams({
             code, client_id: config.id, client_secret: config.secret, redirect_uri: config.redirect, grant_type: "authorization_code"
         }));
@@ -122,6 +122,7 @@ const googleAuthCallback = async (req, res) => {
                     password: passwordHash,
                     authProvider: "google",
                     googleId: gUser.sub,
+                    emailVerified: true,
                     imageUrl: gUser.picture || undefined,
                     age: 18,
                     role: "user",
@@ -140,6 +141,7 @@ const googleAuthCallback = async (req, res) => {
                     googleId: existingUser.googleId || gUser.sub,
                     imageUrl: gUser.picture || existingUser.imageUrl,
                     authProvider: getNextAuthProvider(existingUser.authProvider),
+                    emailVerified: true,
                 },
             });
         }

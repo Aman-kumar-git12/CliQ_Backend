@@ -30,6 +30,11 @@ enum UnblockRequestStatus {
   rejected
 }
 
+enum VerificationTokenType {
+  email_verification
+  password_reset
+}
+
 model Users {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   firstname String
@@ -65,6 +70,20 @@ model Users {
   messages      Message[]
   aiChatSessions AIChatSession[]
   unblockRequests UnblockRequest[]
+  verificationTokens VerificationToken[]
+}
+
+model VerificationToken {
+  id          String                @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String                @db.ObjectId
+  tokenHash   String                @unique
+  type        VerificationTokenType @default(email_verification)
+  expiresAt   DateTime
+  createdAt   DateTime              @default(now())
+
+  user        Users                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type, expiresAt])
 }
 
 model UnblockRequest {
