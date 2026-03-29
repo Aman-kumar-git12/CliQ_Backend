@@ -17,7 +17,7 @@ const createAuthToken = (user) =>
     jwt.sign(
         { userId: user.id, email: user.email },
         process.env.JWT_SECRET_KEY,
-        { expiresIn: "24h" }
+        { expiresIn: "30d" }
     );
 
 const setAuthCookie = (res, token) => {
@@ -25,7 +25,7 @@ const setAuthCookie = (res, token) => {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-        maxAge: 24 * 60 * 60 * 1000,
+        maxAge: 30 * 24 * 60 * 60 * 1000,
     });
 };
 
