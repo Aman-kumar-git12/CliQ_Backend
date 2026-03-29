@@ -28,7 +28,10 @@ const getMailTransporter = () => {
             auth: {
                 user: SMTP_USER,
                 pass: SMTP_PASS,
-            }
+            },
+            connectionTimeout: 5000,
+            greetingTimeout: 5000,
+            socketTimeout: 5000
         } 
         : {
             host: SMTP_HOST,
@@ -40,7 +43,10 @@ const getMailTransporter = () => {
             },
             tls: {
                 rejectUnauthorized: false
-            }
+            },
+            connectionTimeout: 5000,
+            greetingTimeout: 5000,
+            socketTimeout: 5000
         };
 
     transporterCache = nodemailer.createTransport(config);
