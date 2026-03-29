@@ -20,15 +20,30 @@ const getMailTransporter = () => {
         throw new Error("SMTP configuration is incomplete. Please set SMTP_HOST, SMTP_PORT, SMTP_USER, and SMTP_PASS.");
     }
 
-    transporterCache = nodemailer.createTransport({
-        host: SMTP_HOST,
-        port: Number(SMTP_PORT),
-        secure: String(SMTP_SECURE || "").toLowerCase() === "true" || Number(SMTP_PORT) === 465,
-        auth: {
-            user: SMTP_USER,
-            pass: SMTP_PASS,
-        },
-    });
+    const isGmail = SMTP_HOST.includes("gmail.com");
+
+    const config = isGmail 
+        ? {
+            service: 'gmail',
+            auth: {
+                user: SMTP_USER,
+                pass: SMTP_PASS,
+            }
+        } 
+        : {
+            host: SMTP_HOST,
+            port: Number(SMTP_PORT),
+            secure: String(SMTP_SECURE || "").toLowerCase() === "true" || Number(SMTP_PORT) === 465,
+            auth: {
+                user: SMTP_USER,
+                pass: SMTP_PASS,
+            },
+            tls: {
+                rejectUnauthorized: false
+            }
+        };
+
+    transporterCache = nodemailer.createTransport(config);
 
     return transporterCache;
 };
