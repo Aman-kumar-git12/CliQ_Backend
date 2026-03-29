@@ -58,13 +58,13 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 app.use((req, res, next) => {
-    // CSP: use dynamic port so it works whether server lands on 2003, 2004, etc.
-    const backendPort = process.env.PORT || 2004;
-    res.setHeader(
-        "Content-Security-Policy",
-        `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://lh3.googleusercontent.com https://res.cloudinary.com; connect-src 'self' http://localhost:${backendPort} http://localhost:2003 http://localhost:2004 http://localhost:8000 https://cliq-backend-1.onrender.com https://accounts.google.com https://openidconnect.googleapis.com/v1/userinfo;`
-    );
-    next();
+  // CSP: use dynamic port so it works whether server lands on 2003, 2004, etc.
+  const backendPort = process.env.PORT || 2004;
+  res.setHeader(
+    "Content-Security-Policy",
+    `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://lh3.googleusercontent.com https://res.cloudinary.com; connect-src 'self' http://localhost:${backendPort} http://localhost:2003 http://localhost:2004 http://localhost:8000 https://cliq-backend-1.onrender.com https://accounts.google.com https://openidconnect.googleapis.com/v1/userinfo;`
+  );
+  next();
 });
 
 // Proxy /api/agent → LLM service (registered AFTER CORS)

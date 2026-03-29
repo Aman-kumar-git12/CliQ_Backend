@@ -1,113 +1,82 @@
-const nodemailer = require("nodemailer");
+const axios = require("axios");
 const { buildEmailVerificationUrl } = require("./emailVerificationUtils");
 
-let transporterCache = null;
+/**
+ * Send email via Brevo HTTP API (v3)
+ * This avoids SMTP 535 auth errors and port blocks on cloud hosts.
+ */
+const sendBrevoEmail = async ({ toEmail, toName, subject, html, text }) => {
+  const apiKey = process.env.SMTP_PASS;
+  const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const fromName = "Great Bread"; 
 
-const getMailTransporter = () => {
-    if (transporterCache) {
-        return transporterCache;
-    }
+  if (!apiKey) {
+    throw new Error("Brevo API key (SMTP_PASS) is missing in .env");
+  }
+  if (!fromEmail) {
+    throw new Error("Sender email (SMTP_FROM) is missing in .env");
+  }
 
-    const {
-        SMTP_HOST,
-        SMTP_PORT,
-        SMTP_USER,
-        SMTP_PASS,
-        SMTP_SECURE,
-    } = process.env;
-
-    if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
-        throw new Error("SMTP configuration is incomplete. Please set SMTP_HOST, SMTP_PORT, SMTP_USER, and SMTP_PASS.");
-    }
-
-    const isGmail = SMTP_HOST.includes("gmail.com");
-
-    const config = isGmail 
-        ? {
-            service: 'gmail',
-            auth: {
-                user: SMTP_USER,
-                pass: SMTP_PASS,
-            },
-            connectionTimeout: 5000,
-            greetingTimeout: 5000,
-            socketTimeout: 5000
-        } 
-        : {
-            host: SMTP_HOST,
-            port: Number(SMTP_PORT),
-            secure: String(SMTP_SECURE || "").toLowerCase() === "true" || Number(SMTP_PORT) === 465,
-            auth: {
-                user: SMTP_USER,
-                pass: SMTP_PASS,
-            },
-            tls: {
-                rejectUnauthorized: false
-            },
-            connectionTimeout: 5000,
-            greetingTimeout: 5000,
-            socketTimeout: 5000
-        };
-
-    transporterCache = nodemailer.createTransport(config);
-
-    return transporterCache;
+  try {
+    const response = await axios.post(
+      "https://api.brevo.com/v3/smtp/email",
+      {
+        sender: { email: fromEmail, name: fromName },
+        to: [{ email: toEmail, name: toName || "User" }],
+        subject: subject,
+        htmlContent: html,
+        textContent: text,
+      },
+      {
+        headers: {
+          "api-key": apiKey,
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    const errorDetail = error.response?.data?.message || error.message;
+    console.error("[Brevo API Error]:", errorDetail);
+    throw new Error(`Email delivery failed: ${errorDetail}`);
+  }
 };
 
 // ── Legacy token-link email (kept for backward compat) ───────────────────────
 const sendVerificationEmail = async ({ email, firstname, token }) => {
-    const verificationUrl = buildEmailVerificationUrl(token);
-    const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const verificationUrl = buildEmailVerificationUrl(token);
 
-    if (!from) {
-        throw new Error("SMTP_FROM or SMTP_USER must be configured before sending verification emails.");
-    }
+  const html = `
+    <p>Hi ${firstname || "there"},</p>
+    <p>Please verify your email address by clicking the link below:</p>
+    <p><a href="${verificationUrl}">${verificationUrl}</a></p>
+    <p>This link will expire in 1 hour.</p>
+  `;
+  const text = `Hi ${firstname || "there"},\n\nPlease verify your email address by clicking the link below:\n${verificationUrl}\n\nThis link will expire in 1 hour.`;
 
-    const transporter = getMailTransporter();
+  await sendBrevoEmail({
+    toEmail: email,
+    toName: firstname,
+    subject: "Verify your email address",
+    html,
+    text
+  });
 
-    await transporter.sendMail({
-        from,
-        to: email,
-        subject: "Verify your email address",
-        text: [
-            `Hi ${firstname || "there"},`,
-            "",
-            "Please verify your email address by clicking the link below:",
-            verificationUrl,
-            "",
-            "This link will expire in 1 hour.",
-        ].join("\n"),
-        html: `
-            <p>Hi ${firstname || "there"},</p>
-            <p>Please verify your email address by clicking the link below:</p>
-            <p><a href="${verificationUrl}">${verificationUrl}</a></p>
-            <p>This link will expire in 1 hour.</p>
-        `,
-    });
-
-    return verificationUrl;
+  return verificationUrl;
 };
 
 // ── OTP email ─────────────────────────────────────────────────────────────────
 const sendOTPEmail = async ({ email, firstname, otp }) => {
-    const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const digitBoxes = otp
+    .split("")
+    .map(
+      (d) =>
+        `<span style="display:inline-block;width:44px;height:52px;line-height:52px;text-align:center;font-size:28px;font-weight:700;letter-spacing:0;background:#1a1a1a;color:#ffffff;border:2px solid #333333;border-radius:10px;margin:0 4px;">${d}</span>`
+    )
+    .join("");
 
-    if (!from) {
-        throw new Error("SMTP_FROM or SMTP_USER must be configured before sending OTP emails.");
-    }
-
-    const transporter = getMailTransporter();
-
-    // Render each digit in its own box for clarity
-    const digitBoxes = otp
-        .split("")
-        .map(
-            (d) =>
-                `<span style="display:inline-block;width:44px;height:52px;line-height:52px;text-align:center;font-size:28px;font-weight:700;letter-spacing:0;background:#1a1a1a;color:#ffffff;border:2px solid #333333;border-radius:10px;margin:0 4px;">${d}</span>`
-        )
-        .join("");
-
-    const html = `
+  const html = `
 <!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -158,44 +127,35 @@ const sendOTPEmail = async ({ email, firstname, otp }) => {
 </body>
 </html>`;
 
-    const text = [
-        `Hi ${firstname || "there"},`,
-        "",
-        `Your verification code is: ${otp}`,
-        "",
-        "This code expires in 10 minutes.",
-        "If you didn't create an account, ignore this email.",
-    ].join("\n");
+  const text = [
+    `Hi ${firstname || "there"},`,
+    "",
+    `Your verification code is: ${otp}`,
+    "",
+    "This code expires in 10 minutes.",
+    "If you didn't create an account, ignore this email.",
+  ].join("\n");
 
-    await transporter.sendMail({
-        from,
-        to: email,
-        subject: `${otp} is your verification code`,
-        text,
-        html,
-    });
+  await sendBrevoEmail({
+    toEmail: email,
+    toName: firstname,
+    subject: `${otp} is your verification code`,
+    html,
+    text
+  });
 };
 
 // ── Password Reset OTP Email ──────────────────────────────────────────────────
 const sendPasswordResetEmail = async ({ email, firstname, otp }) => {
-    const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const digitBoxes = otp
+    .split("")
+    .map(
+      (d) =>
+        `<span style="display:inline-block;width:44px;height:52px;line-height:52px;text-align:center;font-size:28px;font-weight:700;letter-spacing:0;background:#1a1a1a;color:#ffffff;border:2px solid #333333;border-radius:10px;margin:0 4px;">${d}</span>`
+    )
+    .join("");
 
-    if (!from) {
-        throw new Error("SMTP_FROM or SMTP_USER must be configured before sending emails.");
-    }
-
-    const transporter = getMailTransporter();
-
-    // Render each digit in its own box
-    const digitBoxes = otp
-        .split("")
-        .map(
-            (d) =>
-                `<span style="display:inline-block;width:44px;height:52px;line-height:52px;text-align:center;font-size:28px;font-weight:700;letter-spacing:0;background:#1a1a1a;color:#ffffff;border:2px solid #333333;border-radius:10px;margin:0 4px;">${d}</span>`
-        )
-        .join("");
-
-    const html = `
+  const html = `
 <!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -239,28 +199,28 @@ const sendPasswordResetEmail = async ({ email, firstname, otp }) => {
 </body>
 </html>`;
 
-    const text = [
-        `Hi ${firstname || "there"},`,
-        "",
-        "We received a request to reset your password.",
-        "",
-        `Your password reset code is: ${otp}`,
-        "",
-        "This code expires in 10 minutes.",
-        "If you didn't request a password reset, ignore this email.",
-    ].join("\n");
+  const text = [
+    `Hi ${firstname || "there"},`,
+    "",
+    "We received a request to reset your password.",
+    "",
+    `Your password reset code is: ${otp}`,
+    "",
+    "This code expires in 10 minutes.",
+    "If you didn't request a password reset, ignore this email.",
+  ].join("\n");
 
-    await transporter.sendMail({
-        from,
-        to: email,
-        subject: `${otp} is your password reset code`,
-        text,
-        html,
-    });
+  await sendBrevoEmail({
+    toEmail: email,
+    toName: firstname,
+    subject: `${otp} is your password reset code`,
+    html,
+    text
+  });
 };
 
 module.exports = {
-    sendVerificationEmail,
-    sendOTPEmail,
-    sendPasswordResetEmail,
+  sendVerificationEmail,
+  sendOTPEmail,
+  sendPasswordResetEmail,
 };
