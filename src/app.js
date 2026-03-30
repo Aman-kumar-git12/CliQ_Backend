@@ -25,14 +25,92 @@ if (missingVars.length > 0) {
 }
 
 const app = express();
+const axios = require('axios'); // For self-pings
 
-// 0. Shallow Health Check (Bypasses all middleware for speed & reliability)
+// 0. Server Health & Heartbeat State
+const startTime = Date.now();
+const heartbeats = [];
+const MAX_HEARTBEATS = 10;
+
+// Internal Heartbeat Service (Self-Ping every 12 mins to avoid Render 15m sleep limit)
+const startHeartbeat = () => {
+    setInterval(async () => {
+        try {
+            const port = process.env.PORT || 2004;
+            await axios.get(`http://localhost:${port}/api/health`);
+            heartbeats.unshift(new Date().toISOString());
+            if (heartbeats.length > MAX_HEARTBEATS) heartbeats.pop();
+            console.log(`[HEARTBEAT] Self-ping successful at ${new Date().toLocaleTimeString()}`);
+        } catch (error) {
+            console.error(`[HEARTBEAT] Self-ping failed: ${error.message}`);
+        }
+    }, 12 * 60 * 1000); // 12 minutes
+};
+
+// Start the heartbeat after a short delay
+setTimeout(startHeartbeat, 5000);
+
+// Shallow Health Check (Bypasses all middleware)
 app.get("/api/health", (req, res) => res.status(200).send("OK"));
-app.get("/", (req, res) => res.status(200).json({ 
-    status: "active", 
-    message: "CliQ Backend is Running",
-    timestamp: new Date().toISOString()
-}));
+
+// Visual "Proof of Life" Dashboard
+app.get("/", (req, res) => {
+    const uptime = Math.floor((Date.now() - startTime) / 1000);
+    const h = Math.floor(uptime / 3600);
+    const m = Math.floor((uptime % 3600) / 60);
+    const s = uptime % 60;
+    const uptimeStr = `${h}h ${m}m ${s}s`;
+
+    res.status(200).send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>CliQ Backend | Status</title>
+        <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0a0a0a; color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+            .card { background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-radius: 24px; padding: 40px; width: 90%; max-width: 450px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+            .glow-icon { width: 80px; height: 80px; background: #00ff88; border-radius: 50%; margin: 0 auto 24px; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 30px #00ff88; animation: pulse 2s infinite; }
+            @keyframes pulse { 0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 255, 136, 0.7); } 70% { transform: scale(1); box-shadow: 0 0 0 20px rgba(0, 255, 136, 0); } 100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 255, 136, 0); } }
+            h1 { font-size: 24px; margin-bottom: 8px; font-weight: 700; color: #00ff88; }
+            p.status { font-size: 14px; opacity: 0.6; margin-bottom: 32px; letter-spacing: 1px; text-transform: uppercase; }
+            .stat-box { background: rgba(255,255,255,0.03); border-radius: 16px; padding: 20px; margin-bottom: 24px; border: 1px solid rgba(255,255,255,0.05); }
+            .stat-label { font-size: 12px; opacity: 0.5; margin-bottom: 8px; text-transform: uppercase; }
+            .stat-value { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; }
+            .heartbeat-list { text-align: left; background: rgba(0,0,0,0.2); border-radius: 12px; padding: 16px; font-size: 13px; font-family: monospace; }
+            .heartbeat-title { font-size: 11px; opacity: 0.4; margin-bottom: 12px; font-family: sans-serif; text-transform: uppercase; }
+            .heartbeat-item { display: flex; justify-content: space-between; margin-bottom: 6px; color: #00ff88; }
+            .heartbeat-item span { opacity: 0.5; color: #fff; }
+        </style>
+        <script>
+            setTimeout(() => location.reload(), 30000); // Auto refresh every 30s
+        </script>
+    </head>
+    <body>
+        <div class="card">
+            <div class="glow-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            </div>
+            <h1>SYSTEM ACTIVE</h1>
+            <p class="status">CliQ Production Backend</p>
+            
+            <div class="stat-box">
+                <div class="stat-label">Current Uptime</div>
+                <div class="stat-value">${uptimeStr}</div>
+            </div>
+
+            <div class="heartbeat-list">
+                <div class="heartbeat-title">Recent Internal Heartbeats</div>
+                ${heartbeats.length > 0 ? heartbeats.map(h => `<div class="heartbeat-item">SUCCESS <span>${new Date(h).toLocaleTimeString()}</span></div>`).join('') : '<div style="opacity:0.3">Waiting for first heartbeat...</div>'}
+            </div>
+
+            <p style="margin-top: 32px; font-size: 10px; opacity: 0.3;">AUTO-REFRESH EVERY 30S | SELF-PING EVERY 12M</p>
+        </div>
+    </body>
+    </html>
+    `);
+});
 
 const server = http.createServer(app);
 
