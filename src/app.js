@@ -163,29 +163,6 @@ app.use(cors({
 }));
 
 app.use(cookieParser());
-
-// 7. Proxy /api/agent → LLM service (Moved here to avoid body-parser interference with streams)
-app.use('/api/agent', createProxyMiddleware({
-    target: (process.env.LLM_SERVICE_URL || 'http://localhost:8000') + '/api',
-    changeOrigin: true,
-    pathRewrite: { '^/api/agent': '' }, // Simplified: Strip /api/agent and pass the rest to the target /api
-    timeout: 60000,
-    proxyTimeout: 60000,
-    on: {
-        proxyReq: (proxyReq, req, res) => {
-            console.log(`[Proxy] Routing ${req.method} ${req.url} -> AI Agent`);
-        },
-        proxyRes: (proxyRes) => {
-            delete proxyRes.headers['access-control-allow-origin'];
-            delete proxyRes.headers['access-control-allow-credentials'];
-        }
-    },
-    onError: (err, req, res) => {
-        console.error('[Proxy Error] AI Agent unreachable:', err.message);
-        res.status(502).json({ message: 'AI Agent service is temporarily unavailable', error: err.message });
-    }
-}));
-
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ limit: "20mb", extended: true }));
 
@@ -203,7 +180,22 @@ app.use((req, res, next) => {
     next();
 });
 
-// (Proxy moved to step 7 for streaming support)
+// 7. Proxy /api/agent → LLM service
+app.use('/api/agent', createProxyMiddleware({
+    target: process.env.LLM_SERVICE_URL || 'http://localhost:8000',
+    changeOrigin: true,
+    pathRewrite: { '^/': '/api/' },
+    on: {
+        proxyRes: (proxyRes) => {
+            delete proxyRes.headers['access-control-allow-origin'];
+            delete proxyRes.headers['access-control-allow-credentials'];
+        }
+    },
+    onError: (err, req, res) => {
+        console.error('[Proxy Error] AI Agent unreachable:', err.message);
+        res.status(502).json({ message: 'AI Agent service is temporarily unavailable', error: err.message });
+    }
+}));
 
 // 8. Routes
 app.use("/", routes);

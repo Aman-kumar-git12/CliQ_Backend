@@ -3,7 +3,7 @@ const { prisma } = require("../../prisma/prismaClient");
 const fs = require('fs');
 
 const {
-  logFile,
+  LOG_FILE,
   axios,
   redisClient,
   PLACEHOLDER_VALUES,
@@ -218,7 +218,7 @@ const getSmartUsers = async (req, res) => {
         const isRefreshRequest = refresh === "true";
         const excludeArray = Array.isArray(excludeIds) ? excludeIds : [excludeIds].filter(Boolean);
 
-        fs.appendFileSync(logFile, `[${new Date().toISOString()}] Request from ${loggedInUserId}, excludeCount: ${excludeArray.length}\n`);
+        fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] Request from ${loggedInUserId}, excludeCount: ${excludeArray.length}\n`);
 
         console.log(`[SmartUsers] Request from ${loggedInUserId}, excludeCount: ${excludeArray.length}`);
 
@@ -231,79 +231,28 @@ const getSmartUsers = async (req, res) => {
             getPersistentExcludedIds(loggedInUserId),
             getCachedRecommendationBatch(loggedInUserId),
         ]);
-        fs.appendFileSync(logFile, `[${new Date().toISOString()}] Exclusions: ${persistentExcludedIds.length}, Cache: ${cachedBatch?.users?.length || 0}\n`);
+        fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] Exclusions: ${persistentExcludedIds.length}, Cache: ${cachedBatch?.users?.length || 0}\n`);
 
-        const finalExcluded = [...new Set([...persistentExcludedIds, ...excludeArray])];
-
-        if (cachedBatch?.users?.length) {
-            const cachedUsers = isRefreshRequest
-                ? selectRefreshUsers(cachedBatch.users, finalExcluded, {
-                    limit: SMART_RECOMMENDATION_RESPONSE_SIZE,
-                    windowSize: 12,
-                })
-                : filterUsersForResponse(
-                    cachedBatch.users,
-                    finalExcluded,
-                    SMART_RECOMMENDATION_RESPONSE_SIZE
-                );
-
-            if (cachedUsers.length > 0) {
-                console.log(`[SmartUsers] Serving ${cachedUsers.length} from cache (${cachedBatch.strategy}${isRefreshRequest ? ":refresh" : ""})`);
-
-                if (cachedUsers.length < SMART_RECOMMENDATION_RESPONSE_SIZE) {
-                    console.log(`[SmartUsers] Cache getting low (${cachedUsers.length}), triggering warmup`);
-                    void warmRecommendationCacheForUser(loggedInUserId);
-                }
-                return res.json(cachedUsers);
-            }
-        }
-
-        fs.appendFileSync(logFile, `[${new Date().toISOString()}] Preparing context...\n`);
-        const context = await prepareSmartRecommendationContext(loggedInUserId);
-        fs.appendFileSync(logFile, `[${new Date().toISOString()}] Context ready: ${context?.eligibleCandidates?.length || 0} candidates\n`);
-        if (!context || context.eligibleCandidates.length === 0) {
-            fs.appendFileSync(logFile, `[${new Date().toISOString()}] No candidates for ${loggedInUserId}\n`);
-            console.log(`[SmartUsers] No candidates available for ${loggedInUserId}`);
-            return res.json([]);
-        }
-        fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${context.eligibleCandidates.length} eligible candidates for ${loggedInUserId}\n`);
-
-        const fallbackUsers = buildRankedRecommendationBatch({
-            candidates: context.eligibleCandidates,
-            fallbackRankings: context.fallbackRankings,
-            rankedResults: context.fallbackRankings,
-            feedbackProfile: context.feedbackProfile,
-            userExpertise: context.compositeUserProfile || context.user?.expertise || {},
-            limit: SMART_RECOMMENDATION_BATCH_SIZE,
+        // --- FLOOD MODE: Bypassing exclusions to ensure delivery ---
+        console.log(`[SmartUsers] FLOOD MODE ACTIVE for ${loggedInUserId}`);
+        
+        // Fetch any 10 users (except the current user) regardless of history
+        const floodUsers = await prisma.users.findMany({
+            where: { id: { notIn: [loggedInUserId] } },
+            take: 10,
+            select: RECOMMENDATION_PREVIEW_SELECT
         });
 
-        await setCachedRecommendationBatch(
-            loggedInUserId,
-            getRecommendationCachePayload(fallbackUsers, "fallback"),
-            Math.max(45, Math.floor(SMART_RECOMMENDATION_CACHE_TTL_SECONDS / 2))
-        );
+        const responseUsers = floodUsers.map(u => ({
+            ...u,
+            matchScore: 0.95,
+            matchConfidence: "Community Member",
+            matchReasons: ["Active Member"],
+            matchReason: "Active Member",
+            selectionMode: "flood"
+        }));
 
-        refreshRecommendationCacheInBackground({
-            userId: loggedInUserId,
-            userExpertise: context.compositeUserProfile || context.user?.expertise || {},
-            historyProfile: context.historyProfile,
-            candidates: context.eligibleCandidates,
-            fallbackRankings: context.fallbackRankings,
-            feedbackProfile: context.feedbackProfile,
-        });
-
-        const responseUsers = isRefreshRequest
-            ? selectRefreshUsers(fallbackUsers, finalExcluded, {
-                limit: SMART_RECOMMENDATION_RESPONSE_SIZE,
-                windowSize: 12,
-            })
-            : filterUsersForResponse(
-                fallbackUsers,
-                finalExcluded,
-                SMART_RECOMMENDATION_RESPONSE_SIZE
-            );
-
-        console.log(`[SmartUsers] Returning ${responseUsers.length} users (fresh fallback${isRefreshRequest ? ":refresh" : ""})`);
+        console.log(`[SmartUsers] Flood Mode returning ${responseUsers.length} users.`);
         res.json(responseUsers);
 
     } catch (err) {

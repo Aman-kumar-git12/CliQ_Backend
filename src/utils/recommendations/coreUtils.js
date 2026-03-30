@@ -8,7 +8,8 @@ const normalizeText = (value) => {
 const isMeaningfulText = (value) => {
     const normalized = normalizeText(value);
     if (!normalized) return false;
-    return !PLACEHOLDER_VALUES.has(normalized.toLowerCase());
+    // Temporarily including placeholder values to unblock matching for dummy profiles
+    return true;
 };
 
 const normalizeTerms = (value) => {

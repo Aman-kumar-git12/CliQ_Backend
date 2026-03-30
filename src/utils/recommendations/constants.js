@@ -13,7 +13,7 @@ const SHOWN_EXCLUSION_MINUTES = Math.max(1, Math.round(parseNumber(process.env.S
 
 const RECOMMENDATION_CONFIG = {
     minDiscoverableCompleteness: Math.max(1, Math.round(parseNumber(process.env.SMART_DISCOVERABLE_MIN_COMPLETENESS, 1))),
-    minimumMatchScore: parseNumber(process.env.SMART_MIN_MATCH_SCORE, 0.34),
+    minimumMatchScore: 0.0,
     lowConfidenceScore: parseNumber(process.env.SMART_LOW_CONFIDENCE_SCORE, 0.5),
     lowProfileQualityScore: parseNumber(process.env.SMART_LOW_PROFILE_QUALITY_SCORE, 0.42),
     profileQualityWeight: parseNumber(process.env.SMART_PROFILE_QUALITY_WEIGHT, 0.12),

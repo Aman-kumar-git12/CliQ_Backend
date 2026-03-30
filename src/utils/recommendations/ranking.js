@@ -158,12 +158,13 @@ const selectBalancedRankings = (rankings = [], candidateMap = new Map(), limit =
 };
 
 const buildSmartUserPayload = (users = [], rankings = []) => {
-    const userMap = new Map(users.map((user) => [user.id, user]));
-    const rankingFallbackMap = new Map(rankings.map((item) => [item.id, item]));
+    // Ensuring IDs are compared as strings to avoid type mismatches
+    const userMap = new Map(users.map((user) => [String(user.id), user]));
+    const rankingFallbackMap = new Map(rankings.map((item) => [String(item.id), item]));
 
     return rankings
         .map((ranking) => {
-            const candidate = userMap.get(ranking.id);
+            const candidate = userMap.get(String(ranking.id));
             if (!candidate) return null;
 
             const score = Number(ranking.score || 0);

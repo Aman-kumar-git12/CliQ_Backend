@@ -63,12 +63,15 @@ const validateReview = (req, res, next) => {
 
 const validatePost = (req, res, next) => {
     try {
-        const { content, image } = req.body;
-        if (!content && !image) {
-            throw new Error("Content or image is required");
+        const content = typeof req.body.content === "string" ? req.body.content.trim() : "";
+        const hasImageFile = Boolean(req.files?.image?.[0]);
+        const hasVideoFile = Boolean(req.files?.video?.[0]);
+
+        if (!content && !hasImageFile && !hasVideoFile) {
+            throw new Error("Content, image, or video is required");
         }
-        if (content && content.length > 50) {
-            throw new Error("Content length should be less than 50");
+        if (content.length > 500) {
+            throw new Error("Content length should be less than or equal to 500");
         }
         next();
     } catch (err) {
@@ -78,12 +81,12 @@ const validatePost = (req, res, next) => {
 
 const validatePostUpdate = (req, res, next) => {
     try {
-        const { content } = req.body;
+        const content = typeof req.body.content === "string" ? req.body.content.trim() : "";
         if (!content) {
             throw new Error("Content is required");
         }
-        if (content && content.length > 50) {
-            throw new Error("Content length should be less than 50");
+        if (content.length > 500) {
+            throw new Error("Content length should be less than or equal to 500");
         }
         next();
     } catch (err) {
@@ -98,7 +101,8 @@ const validateProfileEdit = (req, res, next) => {
             "lastname",
             "email",
             "age",
-            "password"
+            "password",
+            "imageUrl"
         ];
         const isEditAllowed = Object.keys(req.body).every((field) =>
             allowedEditsFields.includes(field)

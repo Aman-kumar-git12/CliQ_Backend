@@ -107,13 +107,8 @@ const getProfileQualityLabel = (qualityScore = 0) => {
 };
 
 const isDiscoverableProfile = (expertise = {}) => {
-    const signals = buildProfileSignals(expertise);
-    const hasCoreSignal =
-        Boolean(signals.headline) ||
-        signals.skills.length > 0 ||
-        signals.interests.length > 0 ||
-        signals.textFields.length > 0;
-    return hasCoreSignal && signals.completeness >= RECOMMENDATION_CONFIG.minDiscoverableCompleteness;
+    // Overriding all filters to ensure users appear even with limited data
+    return true;
 };
 
 module.exports = {

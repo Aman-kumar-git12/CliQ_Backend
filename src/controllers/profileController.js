@@ -51,7 +51,12 @@ const editProfile = async (req, res) => {
         Object.keys(req.body).forEach((field) => {
             if (field !== "password") {
                 if (field === "age") {
-                    updateData[field] = parseInt(req.body[field]);
+                    const parsedAge = Number.parseInt(req.body[field], 10);
+                    if (Number.isFinite(parsedAge)) {
+                        updateData[field] = parsedAge;
+                    }
+                } else if (typeof req.body[field] === "string") {
+                    updateData[field] = req.body[field].trim();
                 } else {
                     updateData[field] = req.body[field];
                 }

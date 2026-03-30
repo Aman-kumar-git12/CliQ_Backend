@@ -3,7 +3,7 @@ const { prisma } = require("../../prisma/prismaClient");
 const fs = require('fs');
 
 const {
-  logFile,
+  LOG_FILE,
   axios,
   redisClient,
   PLACEHOLDER_VALUES,

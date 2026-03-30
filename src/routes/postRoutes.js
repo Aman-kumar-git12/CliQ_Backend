@@ -11,7 +11,7 @@ const upload = require("../upload/upload");
 postRouter.get("/user/post", userAuth, postCrudController.getAllPosts);
 postRouter.get("/user/posts/:userId", userAuth, postCrudController.getPostsByUserId);
 postRouter.get("/user/post/:postId", userAuth, postCrudController.getPostById);
-postRouter.post("/create/post", userAuth, upload.single("image"), validatePost, postCrudController.createPost);
+postRouter.post("/create/post", userAuth, upload.fields([{ name: "image", maxCount: 1 }, { name: "video", maxCount: 1 }]), validatePost, postCrudController.createPost);
 postRouter.delete("/delete/post/:postId", userAuth, postCrudController.deletePost);
 postRouter.put("/update/post/:postId", userAuth, validatePostUpdate, postCrudController.updatePost);
 

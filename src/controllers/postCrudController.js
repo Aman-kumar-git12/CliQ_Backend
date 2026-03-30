@@ -145,36 +145,56 @@ const getPostById = async (req, res) => {
 
 const createPost = async (req, res) => {
     try {
-        const { content } = req.body;
+        const content = typeof req.body.content === "string" ? req.body.content.trim() : "";
         let imageUrl = null;
+        let videoUrl = null;
 
-        if (req.file) {
-            const uploadPromise = new Promise((resolve, reject) => {
+        // Use a generic function for Cloudinary upload stream
+        const uploadToCloudinary = (fileBuffer, folder, resourceType = "auto") => {
+            return new Promise((resolve, reject) => {
                 const stream = cloudinary.uploader.upload_stream(
-                    { folder: "posts" },
+                    { folder, resource_type: resourceType },
                     (error, result) => {
                         if (error) reject(error);
                         else resolve(result);
                     }
                 );
-                stream.end(req.file.buffer);
+                stream.end(fileBuffer);
             });
+        };
 
-            const result = await uploadPromise;
-            imageUrl = result.secure_url;
+        if (req.files) {
+            if (req.files.image && req.files.image[0]) {
+                const result = await uploadToCloudinary(req.files.image[0].buffer, "posts", "image");
+                imageUrl = result.secure_url;
+            }
+            if (req.files.video && req.files.video[0]) {
+                const result = await uploadToCloudinary(req.files.video[0].buffer, "posts", "video");
+                videoUrl = result.secure_url;
+            }
+        }
+
+        const postData = {
+            content,
+            userId: req.user.id,
+        };
+
+        if (imageUrl) {
+            postData.image = imageUrl;
+        }
+
+        if (videoUrl) {
+            postData.video = videoUrl;
         }
 
         const post = await prisma.post.create({
-            data: {
-                content,
-                image: imageUrl,
-                userId: req.user.id,
-            },
+            data: postData,
         });
 
         res.json(post);
     } catch (error) {
-        res.status(500).json({ message: "Internal Server Error" });
+        console.error("Post creation error:", error);
+        res.status(500).json({ message: "Internal Server Error", error: error.message });
     }
 };
 
