@@ -25,6 +25,15 @@ if (missingVars.length > 0) {
 }
 
 const app = express();
+
+// 0. Shallow Health Check (Bypasses all middleware for speed & reliability)
+app.get("/api/health", (req, res) => res.status(200).send("OK"));
+app.get("/", (req, res) => res.status(200).json({ 
+    status: "active", 
+    message: "CliQ Backend is Running",
+    timestamp: new Date().toISOString()
+}));
+
 const server = http.createServer(app);
 
 // Initialize Services
@@ -112,7 +121,6 @@ app.use('/api/agent', createProxyMiddleware({
 
 // 8. Routes
 app.use("/", routes);
-app.get("/api/health", (req, res) => res.status(200).send("OK"));
 
 // 9. Server Startup with Port Retry
 const basePort = Number(process.env.PORT) || 2004;
