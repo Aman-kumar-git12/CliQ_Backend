@@ -39,7 +39,8 @@ const getPersistentExcludedIds = async (loggedInUserId) => {
     return Array.from(excludedIds);
 };
 
-const getEligibleRecommendationCandidates = async (loggedInUserId, excludedIds = []) => {
+const getEligibleRecommendationCandidates = async (loggedInUserId, excludedIds = [], options = {}) => {
+    const { take } = options;
     const notPreferredPreferences = await prisma.recommendationPreference.findMany({
         where: { userId: loggedInUserId, status: "not_preferred" },
         select: { candidateUserId: true, updatedAt: true },
@@ -53,6 +54,7 @@ const getEligibleRecommendationCandidates = async (loggedInUserId, excludedIds =
     const strictCandidates = await prisma.users.findMany({
         where: { id: { notIn: strictExcluded } },
         orderBy: { updatedAt: "desc" },
+        ...(take ? { take } : {}),
         select: {
             id: true,
             firstname: true,
@@ -77,6 +79,7 @@ const getEligibleRecommendationCandidates = async (loggedInUserId, excludedIds =
     const relaxedCandidates = await prisma.users.findMany({
         where: { id: { notIn: excludedIds } },
         orderBy: { updatedAt: "desc" },
+        ...(take ? { take } : {}),
         select: {
             id: true,
             firstname: true,

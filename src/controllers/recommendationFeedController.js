@@ -207,6 +207,25 @@ const selectRefreshUsers = (users = [], excludedIds = [], {
     return weightedSampleUsers(refreshWindow, limit);
 };
 
+const buildSeedRecommendationBatch = (candidates = [], limit = SMART_RECOMMENDATION_BATCH_SIZE) =>
+    candidates.slice(0, limit).map((candidate) => {
+        const profileQualityScore = getProfileQualityScore(candidate.expertise || {});
+        const profileQualityLabel = getProfileQualityLabel(profileQualityScore);
+
+        return {
+            ...candidate,
+            matchScore: 0.45,
+            matchConfidence: "Potential match",
+            profileQualityScore,
+            profileQualityLabel,
+            selectionMode: "seed",
+            diversity: null,
+            matchReasons: ["Recommended from your current discovery pool"],
+            matchReason: "Recommended from your current discovery pool",
+            matchWarning: null,
+        };
+    });
+
 const getSmartUsers = async (req, res) => {
     try {
         const loggedInUserId = req.user?.id;
@@ -234,10 +253,29 @@ const getSmartUsers = async (req, res) => {
         fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] Exclusions: ${persistentExcludedIds.length}, Cache: ${cachedBatch?.users?.length || 0}\n`);
 
         if (!cachedBatch || !cachedBatch.users || cachedBatch.users.length === 0 || isRefreshRequest) {
-            console.log(`[SmartUsers] Cache miss for ${loggedInUserId}. Warming up...`);
-            cachedBatch = await warmRecommendationCacheForUser(loggedInUserId);
-            if (!cachedBatch || !cachedBatch.users) {
-                cachedBatch = await getCachedRecommendationBatch(loggedInUserId);
+            console.log(`[SmartUsers] Cache miss for ${loggedInUserId}. Preparing fast seed batch...`);
+
+            const seedCandidates = await getEligibleRecommendationCandidates(
+                loggedInUserId,
+                persistentExcludedIds,
+                { take: Math.max(SMART_RECOMMENDATION_BATCH_SIZE * 2, 24) }
+            );
+            const seedUsers = buildSeedRecommendationBatch(seedCandidates, SMART_RECOMMENDATION_BATCH_SIZE);
+
+            if (seedUsers.length > 0) {
+                cachedBatch = getRecommendationCachePayload(seedUsers, "seed");
+                await setCachedRecommendationBatch(
+                    loggedInUserId,
+                    cachedBatch,
+                    Math.max(30, Math.floor(SMART_RECOMMENDATION_CACHE_TTL_SECONDS / 3))
+                );
+                refreshRecommendationCacheInBackground({ userId: loggedInUserId });
+            } else {
+                console.log(`[SmartUsers] Seed batch empty for ${loggedInUserId}. Falling back to full warmup...`);
+                cachedBatch = await warmRecommendationCacheForUser(loggedInUserId);
+                if (!cachedBatch || !cachedBatch.users) {
+                    cachedBatch = await getCachedRecommendationBatch(loggedInUserId);
+                }
             }
         }
 
