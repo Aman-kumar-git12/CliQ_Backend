@@ -8,8 +8,7 @@ const normalizeText = (value) => {
 const isMeaningfulText = (value) => {
     const normalized = normalizeText(value);
     if (!normalized) return false;
-    // Temporarily including placeholder values to unblock matching for dummy profiles
-    return true;
+    return !PLACEHOLDER_VALUES.has(normalized.toLowerCase());
 };
 
 const normalizeTerms = (value) => {
@@ -72,6 +71,25 @@ const tokenize = (values = []) => {
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
+const getRecommendationSource = (req, fallback = "smart_connections") => {
+    const bodySource = normalizeText(req?.body?.source);
+    const querySource = normalizeText(req?.query?.source);
+    const paramSource = normalizeText(req?.params?.source);
+
+    return bodySource || querySource || paramSource || fallback;
+};
+
+const getRecommendationMetadata = (req, extra = {}) => {
+    const bodyMetadata = getNestedObject(req?.body?.metadata);
+    const queryMetadata = getNestedObject(req?.query?.metadata);
+
+    return {
+        ...queryMetadata,
+        ...bodyMetadata,
+        ...extra,
+    };
+};
+
 module.exports = {
     normalizeText,
     isMeaningfulText,
@@ -81,4 +99,6 @@ module.exports = {
     summarizeList,
     tokenize,
     clamp,
+    getRecommendationSource,
+    getRecommendationMetadata,
 };

@@ -222,38 +222,32 @@ const getSmartUsers = async (req, res) => {
 
         console.log(`[SmartUsers] Request from ${loggedInUserId}, excludeCount: ${excludeArray.length}`);
 
-        if (req.query.refresh === 'true') {
+        if (isRefreshRequest) {
             await invalidateRecommendationCache(loggedInUserId);
             console.log(`[SmartUsers] Cache invalidated for user ${loggedInUserId} (refresh requested)`);
         }
 
-        const [persistentExcludedIds, cachedBatch] = await Promise.all([
+        let [persistentExcludedIds, cachedBatch] = await Promise.all([
             getPersistentExcludedIds(loggedInUserId),
             getCachedRecommendationBatch(loggedInUserId),
         ]);
         fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] Exclusions: ${persistentExcludedIds.length}, Cache: ${cachedBatch?.users?.length || 0}\n`);
 
-        // --- FLOOD MODE: Bypassing exclusions to ensure delivery ---
-        console.log(`[SmartUsers] FLOOD MODE ACTIVE for ${loggedInUserId}`);
-        
-        // Fetch any 10 users (except the current user) regardless of history
-        const floodUsers = await prisma.users.findMany({
-            where: { id: { notIn: [loggedInUserId] } },
-            take: 10,
-            select: RECOMMENDATION_PREVIEW_SELECT
+        if (!cachedBatch || !cachedBatch.users || cachedBatch.users.length === 0 || isRefreshRequest) {
+            console.log(`[SmartUsers] Cache miss for ${loggedInUserId}. Warming up...`);
+            cachedBatch = await warmRecommendationCacheForUser(loggedInUserId);
+            if (!cachedBatch || !cachedBatch.users) {
+                cachedBatch = await getCachedRecommendationBatch(loggedInUserId);
+            }
+        }
+
+        const validExcludedIds = [...excludeArray, ...persistentExcludedIds];
+        const refreshedUsers = selectRefreshUsers(cachedBatch?.users || [], validExcludedIds, { 
+            limit: SMART_RECOMMENDATION_RESPONSE_SIZE 
         });
 
-        const responseUsers = floodUsers.map(u => ({
-            ...u,
-            matchScore: 0.95,
-            matchConfidence: "Community Member",
-            matchReasons: ["Active Member"],
-            matchReason: "Active Member",
-            selectionMode: "flood"
-        }));
-
-        console.log(`[SmartUsers] Flood Mode returning ${responseUsers.length} users.`);
-        res.json(responseUsers);
+        console.log(`[SmartUsers] Smart Delivery Mode returning ${refreshedUsers.length} top candidates.`);
+        res.json(refreshedUsers);
 
     } catch (err) {
         console.error("[SmartUsers] CRITICAL FAILURE:", err);

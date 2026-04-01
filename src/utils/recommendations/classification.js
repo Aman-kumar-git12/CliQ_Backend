@@ -62,10 +62,54 @@ const getClusterKey = (signals = {}) => {
     return "cluster:general";
 };
 
+const getActivityRecencyScore = (updatedAt) => {
+    if (!updatedAt) return 0.2;
+
+    const ageMs = Math.max(0, Date.now() - new Date(updatedAt).getTime());
+    const ageDays = ageMs / (1000 * 60 * 60 * 24);
+
+    if (ageDays <= 1) return 1;
+    if (ageDays <= 7) return 0.85;
+    if (ageDays <= 30) return 0.62;
+    if (ageDays <= 90) return 0.38;
+    return 0.18;
+};
+
+const buildCandidateActivitySummary = ({
+    activityScore = 0,
+    responsivenessScore = 0,
+    outcomeScore = 0,
+    recentInteractions = 0,
+} = {}) => {
+    const parts = [];
+
+    if (activityScore >= 0.8) {
+        parts.push("High activity");
+    } else if (activityScore >= 0.45) {
+        parts.push("Active member");
+    }
+
+    if (responsivenessScore >= 0.58) {
+        parts.push(`Response rate ${Math.round(responsivenessScore * 100)}%`);
+    }
+
+    if (outcomeScore >= 0.52) {
+        parts.push(`Success score ${Math.round(outcomeScore * 100)}%`);
+    }
+
+    if (recentInteractions >= 3) {
+        parts.push(`${recentInteractions} recent interactions`);
+    }
+
+    return parts.slice(0, 3).join(" • ") || "Active member";
+};
+
 module.exports = {
     detectExperienceLevel,
     detectProfileType,
     detectLocationBucket,
     detectBackgroundKey,
     getClusterKey,
+    getActivityRecencyScore,
+    buildCandidateActivitySummary,
 };

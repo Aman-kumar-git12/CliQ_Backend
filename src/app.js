@@ -6,7 +6,7 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 const cookieParser = require("cookie-parser");
 const rateLimit = require("express-rate-limit");
-const { createProxyMiddleware } = require('http-proxy-middleware');
+const { createProxyMiddleware, fixRequestBody } = require('http-proxy-middleware');
 
 const routes = require("./routes/index");
 const { initialiseSocket } = require("./socket/socket");
@@ -186,6 +186,7 @@ app.use('/api/agent', createProxyMiddleware({
     changeOrigin: true,
     pathRewrite: { '^/': '/api/' },
     on: {
+        proxyReq: fixRequestBody,
         proxyRes: (proxyRes) => {
             delete proxyRes.headers['access-control-allow-origin'];
             delete proxyRes.headers['access-control-allow-credentials'];

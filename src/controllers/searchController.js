@@ -59,9 +59,6 @@ const searchUserByName = async (req, res) => {
             select: publicUserSelect,
         });
 
-        if (!users || users.length === 0) {
-            return res.status(404).json({ message: "User not found" });
-        }
         res.json(users);
     } catch (err) {
         res.status(500).json({ message: "Internal Server Error", error: err.message });

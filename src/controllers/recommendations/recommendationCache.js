@@ -1,17 +1,12 @@
 const axios = require("axios");
 const {
-    redisClient,
-    getRecommendationCacheKey
+    invalidateRecommendationCache
 } = require("../../utils/recommendationUtils");
 
 const clearRecommendationCacheForUser = async (userId) => {
     if (!userId) return;
     try {
-        const isRedisReady = await redisClient.ensureReady?.();
-        if (isRedisReady && redisClient?.isReady) {
-            const cacheKey = getRecommendationCacheKey(userId);
-            await redisClient.del(cacheKey);
-        }
+        await invalidateRecommendationCache(userId);
     } catch (error) {
         console.error("Failed to clear recommendation cache:", error.message);
     }

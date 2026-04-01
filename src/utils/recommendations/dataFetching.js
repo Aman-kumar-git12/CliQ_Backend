@@ -224,8 +224,119 @@ const getCandidatePreviewMap = async (candidateIds = []) => {
 };
 
 const getCandidateActivityMap = async (candidateIds = []) => {
-    // ... (rest of the code as already there)
-    // Actually, I'll just append it to the end of the file.
+    const uniqueIds = [...new Set(candidateIds.filter(Boolean))];
+    if (uniqueIds.length === 0) return new Map();
+
+    const [candidates, requests] = await Promise.all([
+        prisma.users.findMany({
+            where: { id: { in: uniqueIds } },
+            select: {
+                id: true,
+                updatedAt: true,
+            },
+        }),
+        prisma.connectionsRequest.findMany({
+            where: {
+                OR: [
+                    { fromUserId: { in: uniqueIds } },
+                    { toUserId: { in: uniqueIds } },
+                ],
+            },
+            select: {
+                fromUserId: true,
+                toUserId: true,
+                status: true,
+                updatedAt: true,
+            },
+        }),
+    ]);
+
+    const statsByCandidate = new Map(
+        uniqueIds.map((candidateId) => [
+            candidateId,
+            {
+                totalInteractions: 0,
+                recentInteractions: 0,
+                receivedRequests: 0,
+                acceptedConnections: 0,
+            },
+        ])
+    );
+
+    requests.forEach((request) => {
+        const touchedCandidates = [request.fromUserId, request.toUserId]
+            .filter((candidateId, index, source) =>
+                uniqueIds.includes(candidateId) && source.indexOf(candidateId) === index
+            );
+
+        touchedCandidates.forEach((candidateId) => {
+            const stats = statsByCandidate.get(candidateId);
+            if (!stats) return;
+
+            stats.totalInteractions += 1;
+
+            if (isWithinRecentDays(request.updatedAt, 30)) {
+                stats.recentInteractions += 1;
+            }
+
+            if (request.toUserId === candidateId && (request.status === "interested" || request.status === "accepted")) {
+                stats.receivedRequests += 1;
+            }
+
+            if (request.status === "accepted") {
+                stats.acceptedConnections += 1;
+            }
+        });
+    });
+
+    return new Map(
+        candidates.map((candidate) => {
+            const stats = statsByCandidate.get(candidate.id) || {
+                totalInteractions: 0,
+                recentInteractions: 0,
+                receivedRequests: 0,
+                acceptedConnections: 0,
+            };
+
+            const recencyScore = getActivityRecencyScore(candidate.updatedAt);
+            const interactionVolumeScore = clamp(
+                (Math.min(stats.recentInteractions, 4) / 4) * 0.7
+                + (Math.min(stats.totalInteractions, 10) / 10) * 0.3,
+                0,
+                1
+            );
+            const activityScore = clamp((recencyScore * 0.55) + (interactionVolumeScore * 0.45), 0, 1);
+            const responsivenessScore = clamp(
+                stats.receivedRequests > 0
+                    ? stats.acceptedConnections / stats.receivedRequests
+                    : recencyScore * 0.55,
+                0,
+                1
+            );
+            const outcomeScore = clamp(
+                stats.totalInteractions > 0
+                    ? (stats.acceptedConnections / stats.totalInteractions) * 1.4
+                    : recencyScore * 0.4,
+                0,
+                1
+            );
+
+            return [
+                candidate.id,
+                {
+                    activityScore: Number(activityScore.toFixed(4)),
+                    responsivenessScore: Number(responsivenessScore.toFixed(4)),
+                    outcomeScore: Number(outcomeScore.toFixed(4)),
+                    activitySummary: buildCandidateActivitySummary({
+                        activityScore,
+                        responsivenessScore,
+                        outcomeScore,
+                        recentInteractions: stats.recentInteractions,
+                    }),
+                },
+            ];
+        })
+    );
 };
 
 const pickLatestEventsByCandidate = (events = []) => {
@@ -238,6 +349,14 @@ const pickLatestEventsByCandidate = (events = []) => {
     return latestEventByCandidate;
 };
 
+const getRecommendationHistoryEvents = async (userId, limit = 150) => {
+    return prisma.recommendationEvent.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+    });
+};
+
 const createSectionItem = (action, candidate, meta = {}) => ({
     id: `${action}-${candidate.id}`,
     action,
@@ -246,6 +365,19 @@ const createSectionItem = (action, candidate, meta = {}) => ({
     source: meta.source || null,
     requestId: meta.requestId || null,
 });
+
+const formatRecommendationTimeline = (events = [], candidateMap = new Map()) =>
+    (events || [])
+        .map((event) => ({
+            id: event.id,
+            action: event.action,
+            source: event.source || null,
+            createdAt: event.createdAt || null,
+            candidateUserId: event.candidateUserId || null,
+            candidate: candidateMap.get(event.candidateUserId) || null,
+            metadata: event.metadata || {},
+        }))
+        .filter((event) => event.candidate || event.candidateUserId);
 
 const buildRecommendationSections = async (userId) => {
     const [events, preferences, interestedRequests] = await Promise.all([
@@ -326,5 +458,7 @@ module.exports = {
     decorateCandidatesForRanking,
     pickLatestEventsByCandidate,
     createSectionItem,
+    formatRecommendationTimeline,
     buildRecommendationSections,
+    getRecommendationHistoryEvents,
 };

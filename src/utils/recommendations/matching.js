@@ -2,7 +2,14 @@ const fs = require("fs");
 const axios = require("axios");
 const { LOG_FILE, AI_MATCH_TIMEOUT_MS, SMART_RECOMMENDATION_BATCH_SIZE, SMART_RECOMMENDATION_RESPONSE_SIZE } = require("./constants");
 const { prisma } = require("../../../prisma/prismaClient");
-const { getPersistentExcludedIds, getEligibleRecommendationCandidates, getAcceptedConnectionsForUser, getFeedbackCandidateIds } = require("./dataFetching");
+const {
+    getPersistentExcludedIds,
+    getEligibleRecommendationCandidates,
+    getAcceptedConnectionsForUser,
+    getFeedbackCandidateIds,
+    getCandidateActivityMap,
+    decorateCandidatesForRanking,
+} = require("./dataFetching");
 const { buildHistoryProfile, buildCompositeMatchingProfile } = require("./history");
 const { buildFeedbackProfile } = require("./feedback");
 const { buildFallbackRankings } = require("./scoring");
@@ -24,51 +31,39 @@ const getMatchingAgentPayload = (userExpertise = {}, historyProfile = null, cand
     })),
 });
 
-const refreshRecommendationCacheInBackground = ({
-    userId,
+const rankCandidatesWithAgent = async ({
     userExpertise,
     historyProfile,
     candidates,
     fallbackRankings,
-    feedbackProfile,
 }) => {
-    if (!userId || !Array.isArray(candidates) || candidates.length === 0) return;
-
     const llmServiceUrl = process.env.LLM_SERVICE_URL || "http://localhost:8000";
+    let rankedResults = Array.isArray(fallbackRankings) ? fallbackRankings : [];
+    let strategy = "fallback";
+
+    try {
+        const agentResponse = await axios.post(
+            `${llmServiceUrl}/api/match/match`,
+            getMatchingAgentPayload(userExpertise || {}, historyProfile, candidates),
+            { timeout: AI_MATCH_TIMEOUT_MS }
+        );
+
+        if (Array.isArray(agentResponse.data?.rankedResults) && agentResponse.data.rankedResults.length > 0) {
+            rankedResults = agentResponse.data.rankedResults;
+            strategy = "ai";
+        }
+    } catch (agentError) {
+        console.error("AI Smart Matching failed:", agentError.message);
+    }
+
+    return { rankedResults, strategy };
+};
+
+const refreshRecommendationCacheInBackground = ({ userId }) => {
+    if (!userId) return;
 
     Promise.resolve()
-        .then(async () => {
-            let rankedResults = fallbackRankings;
-            let strategy = "fallback";
-
-            try {
-                const agentResponse = await axios.post(
-                    `${llmServiceUrl}/api/match/match`,
-                    getMatchingAgentPayload(userExpertise || {}, historyProfile, candidates),
-                    { timeout: AI_MATCH_TIMEOUT_MS }
-                );
-
-                if (Array.isArray(agentResponse.data?.rankedResults) && agentResponse.data.rankedResults.length > 0) {
-                    rankedResults = agentResponse.data.rankedResults;
-                    strategy = "ai";
-                }
-            } catch (agentError) {
-                console.error("AI Smart Matching warm-cache failed:", agentError.message);
-            }
-
-            const users = buildRankedRecommendationBatch({
-                candidates,
-                fallbackRankings,
-                rankedResults,
-                feedbackProfile,
-                userExpertise,
-                limit: SMART_RECOMMENDATION_BATCH_SIZE,
-            });
-
-            if (users.length > 0) {
-                await setCachedRecommendationBatch(userId, getRecommendationCachePayload(users, strategy));
-            }
-        })
+        .then(() => warmRecommendationCacheForUser(userId))
         .catch((error) => {
             console.error("Recommendation background refresh failed:", error.message);
         });
@@ -91,7 +86,6 @@ const prepareSmartRecommendationContext = async (loggedInUserId) => {
         getAcceptedConnectionsForUser(loggedInUserId),
     ]);
 
-    // Note: getFeedbackProfileForUser in original was separate, but we can build it here
     const feedbackCandidateIds = [...new Set(feedbackEvents.map((event) => event.candidateUserId))];
     let feedbackProfile = null;
     if (feedbackCandidateIds.length > 0) {
@@ -103,18 +97,22 @@ const prepareSmartRecommendationContext = async (loggedInUserId) => {
         feedbackProfile = buildFeedbackProfile(feedbackEvents, feedbackCandidateMap);
     }
 
-    // We need activity map which was in dataFetching or matching? original had getCandidateActivityMap
-    // I missed getCandidateActivityMap and decorateCandidatesForRanking in previous step.
-    // I'll add them to dataFetching or a new helper.
-    // Let's assume they are exported from another file if I move them.
-    // I'll put the activity logic in dataFetching.js next.
-    
+    const candidateActivityMap = await getCandidateActivityMap(eligibleCandidates.map((candidate) => candidate.id));
+    const decoratedCandidates = decorateCandidatesForRanking(eligibleCandidates, candidateActivityMap);
+    const historyProfile = buildHistoryProfile(user?.expertise || {}, feedbackProfile, acceptedConnections);
+    const compositeUserProfile = buildCompositeMatchingProfile(user?.expertise || {}, historyProfile);
+    const fallbackRankings = buildFallbackRankings(compositeUserProfile, decoratedCandidates);
+
     return {
         user,
         persistentExcludedIds,
-        eligibleCandidates,
+        eligibleCandidates: decoratedCandidates,
         feedbackProfile,
         acceptedConnections,
+        candidateActivityMap,
+        historyProfile,
+        compositeUserProfile,
+        fallbackRankings,
     };
 };
 
@@ -124,27 +122,40 @@ const warmRecommendationCacheForUser = async (loggedInUserId) => {
     try {
         console.log(`[Warmup] Starting for user ${loggedInUserId}`);
         const context = await prepareSmartRecommendationContext(loggedInUserId);
+        if (!context?.user) {
+            return null;
+        }
 
         if (context.eligibleCandidates.length === 0) {
             console.log(`[Warmup] No eligible candidates for ${loggedInUserId}`);
+            const emptyPayload = getRecommendationCachePayload([], "empty");
             await setCachedRecommendationBatch(
                 loggedInUserId,
-                getRecommendationCachePayload([], "empty"),
+                emptyPayload,
                 Math.max(30, Math.floor(SMART_RECOMMENDATION_CACHE_TTL_SECONDS / 3))
             );
-            return context;
+            return emptyPayload;
         }
 
-        refreshRecommendationCacheInBackground({
-            userId: loggedInUserId,
+        const { rankedResults, strategy } = await rankCandidatesWithAgent({
             userExpertise: context.compositeUserProfile || context.user?.expertise || {},
             historyProfile: context.historyProfile,
             candidates: context.eligibleCandidates,
             fallbackRankings: context.fallbackRankings,
-            feedbackProfile: context.feedbackProfile,
         });
 
-        return context;
+        const users = buildRankedRecommendationBatch({
+            candidates: context.eligibleCandidates,
+            fallbackRankings: context.fallbackRankings,
+            rankedResults,
+            feedbackProfile: context.feedbackProfile,
+            userExpertise: context.compositeUserProfile || context.user?.expertise || {},
+            limit: SMART_RECOMMENDATION_BATCH_SIZE,
+        });
+
+        const payload = getRecommendationCachePayload(users, strategy);
+        await setCachedRecommendationBatch(loggedInUserId, payload);
+        return payload;
     } catch (error) {
         console.error(`[Warmup] Failed for ${loggedInUserId}:`, error.message);
         return null;

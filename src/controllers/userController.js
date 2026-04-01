@@ -9,6 +9,17 @@ const getRequests = async (req, res) => {
                 status: "interested",
                 toUserId: loggedInUser.id,
             },
+            include: {
+                fromUser: {
+                    select: {
+                        id: true,
+                        firstname: true,
+                        lastname: true,
+                        imageUrl: true,
+                        expertise: true
+                    }
+                }
+            }
         });
         res.json({ message: "Requests successfully fetched", connectionRequests });
     } catch (err) {
