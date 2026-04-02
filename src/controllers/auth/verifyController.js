@@ -1,6 +1,7 @@
 const { prisma } = require("../../../prisma/prismaClient");
 const { toSafeUser } = require("../../utils/authUtils");
 const { hashVerificationToken, hashOTP } = require("../../utils/emailVerificationUtils");
+const { primeRecommendationFeedForUser } = require("../recommendationActionController");
 const {
     normalizeEmail,
     createAuthToken,
@@ -49,6 +50,7 @@ const verifyEmail = async (req, res) => {
 
         const authToken = createAuthToken(user);
         setAuthCookie(res, authToken);
+        primeRecommendationFeedForUser(user.id, user.expertise);
 
         return res.json({
             message: "Email verified successfully.",
@@ -156,6 +158,7 @@ const verifyOTP = async (req, res) => {
         if (user.emailVerified) {
             const authToken = createAuthToken(user);
             setAuthCookie(res, authToken);
+            primeRecommendationFeedForUser(user.id, user.expertise);
             return res.json({ message: "Email already verified.", user: toSafeUser(user) });
         }
 
@@ -188,6 +191,7 @@ const verifyOTP = async (req, res) => {
 
         const authToken = createAuthToken(updatedUser);
         setAuthCookie(res, authToken);
+        primeRecommendationFeedForUser(updatedUser.id, updatedUser.expertise);
 
         return res.json({
             message: "Email verified successfully!",

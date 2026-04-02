@@ -1,6 +1,7 @@
 const axios = require("axios");
 const {
-    invalidateRecommendationCache
+    invalidateRecommendationCache,
+    refreshRecommendationCacheInBackground,
 } = require("../../utils/recommendationUtils");
 
 const clearRecommendationCacheForUser = async (userId) => {
@@ -31,4 +32,21 @@ const precomputeProfileEmbedding = (userId, expertise) => {
         });
 };
 
-module.exports = { clearRecommendationCacheForUser, precomputeProfileEmbedding };
+const primeRecommendationFeedForUser = (userId, expertise) => {
+    if (!userId) return;
+
+    Promise.resolve()
+        .then(() => {
+            precomputeProfileEmbedding(userId, expertise || {});
+            refreshRecommendationCacheInBackground({ userId });
+        })
+        .catch((error) => {
+            console.error("Recommendation feed prewarm failed:", error.message);
+        });
+};
+
+module.exports = {
+    clearRecommendationCacheForUser,
+    precomputeProfileEmbedding,
+    primeRecommendationFeedForUser,
+};

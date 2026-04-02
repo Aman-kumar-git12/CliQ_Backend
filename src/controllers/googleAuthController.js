@@ -2,6 +2,7 @@ const axios = require("axios");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const { prisma } = require("../../prisma/prismaClient");
+const { primeRecommendationFeedForUser } = require("./recommendationActionController");
 
 const GOOGLE_URLS = {
     auth: "https://accounts.google.com/o/oauth2/v2/auth",
@@ -147,6 +148,7 @@ const googleAuthCallback = async (req, res) => {
         }
 
         issueToken(res, user);
+        primeRecommendationFeedForUser(user.id, user.expertise);
         res.redirect(`${frontendUrl}/home`);
     } catch (e) {
         console.error("[Google Auth Callback Error]", e.message);

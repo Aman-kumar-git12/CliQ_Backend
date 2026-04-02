@@ -9,6 +9,7 @@ const getPersistentExcludedIds = async (loggedInUserId) => {
     const [connections, savedEvents] = await Promise.all([
         prisma.connectionsRequest.findMany({
             where: {
+                status: { in: ["accepted", "interested"] },
                 OR: [
                     { toUserId: loggedInUserId },
                     { fromUserId: loggedInUserId },
@@ -26,7 +27,7 @@ const getPersistentExcludedIds = async (loggedInUserId) => {
     ]);
 
     const excludedIds = new Set([loggedInUserId]);
-    
+
     connections.forEach((conn) => {
         excludedIds.add(conn.fromUserId);
         excludedIds.add(conn.toUserId);

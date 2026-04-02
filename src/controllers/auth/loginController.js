@@ -2,6 +2,7 @@ const { prisma } = require("../../../prisma/prismaClient");
 const bcrypt = require("bcrypt");
 const { safeUserSelect, toSafeUser } = require("../../utils/authUtils");
 const { normalizeEmail, createAuthToken, setAuthCookie } = require("./authHelpers");
+const { primeRecommendationFeedForUser } = require("../recommendationActionController");
 
 const getMe = async (req, res) => {
     try {
@@ -58,6 +59,7 @@ const login = async (req, res) => {
 
         const token = createAuthToken(user);
         setAuthCookie(res, token);
+        primeRecommendationFeedForUser(user.id, user.expertise);
 
         return res.send({ message: "Login successful", user: toSafeUser(user) });
     } catch (err) {
