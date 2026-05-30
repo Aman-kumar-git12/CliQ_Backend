@@ -7,7 +7,7 @@ const MAX_FEEDBACK_EVENTS = Math.max(40, Math.round(parseNumber(process.env.SMAR
 const SMART_RECOMMENDATION_BATCH_SIZE = 18;
 const SMART_RECOMMENDATION_RESPONSE_SIZE = 10;
 const SMART_RECOMMENDATION_CACHE_TTL_SECONDS = 180;
-const AI_MATCH_TIMEOUT_MS = 2500;
+const AI_MATCH_TIMEOUT_MS = Math.max(2500, Math.round(parseNumber(process.env.AI_MATCH_TIMEOUT_MS, 30000)));
 const NOT_PREFERRED_EXCLUSION_DAYS = Math.max(3, Math.round(parseNumber(process.env.SMART_NOT_PREFERRED_EXCLUSION_DAYS, 14)));
 const SHOWN_EXCLUSION_MINUTES = Math.max(1, Math.round(parseNumber(process.env.SMART_SHOWN_EXCLUSION_MINUTES, 60)));
 
