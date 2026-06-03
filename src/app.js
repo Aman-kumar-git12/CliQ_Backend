@@ -153,11 +153,19 @@ const limiter = rateLimit({
 app.use("/api/", limiter); // Apply to all API routes
 
 // 5. CORS Configuration
-const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:5173").split(",").map(o => o.trim());
+const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:5173,http://127.0.0.1:5173").split(",").map(o => o.trim());
 app.use(cors({
-    origin: (origin, cb) => !origin || allowedOrigins.includes(origin) || allowedOrigins.includes("*")
-        ? cb(null, true)
-        : cb(new Error("Not allowed by CORS")),
+    origin: (origin, cb) => {
+        if (!origin || allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
+            return cb(null, true);
+        }
+        // Dynamically allow any local development port
+        if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+            return cb(null, true);
+        }
+        console.warn(`[CORS] Rejected origin: ${origin}`);
+        return cb(null, false);
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
 }));
