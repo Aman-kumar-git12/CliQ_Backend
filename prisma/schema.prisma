@@ -43,7 +43,10 @@ model Users {
   age       Int
   password  String
   authProvider AuthProvider @default(local)
-  googleId   String?  @unique
+  // Not @unique: MongoDB unique indexes treat every missing googleId as the same
+  // null, so the index can't be built once two non-Google users exist (prod has
+  // 143). Google sign-in matches users by their unique email instead.
+  googleId   String?
   emailVerified Boolean @default(false)
   role      UserRole @default(user)
   isBlocked Boolean  @default(false)
@@ -71,6 +74,12 @@ model Users {
   aiChatSessions AIChatSession[]
   unblockRequests UnblockRequest[]
   verificationTokens VerificationToken[]
+
+  notificationsReceived Notification[] @relation("notificationRecipient")
+  notificationsSent     Notification[] @relation("notificationActor")
+  savedPosts            SavedPost[]
+
+  @@index([googleId])
 }
 
 model VerificationToken {
@@ -129,6 +138,7 @@ model ConnectionsRequest {
 
   fromUser Users @relation("sentRequests", fields: [fromUserId], references: [id] , onDelete: Cascade)
   toUser   Users @relation("receivedRequests", fields: [toUserId], references: [id], onDelete: Cascade)
+  notifications Notification[]
 
   @@unique([fromUserId, toUserId])
   @@index([fromUserId, status])
@@ -143,11 +153,41 @@ model Post {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Users mentioned in `content`; resolved from @handles when the post is saved.
+  mentionIds  String[] @db.ObjectId
+  // Open Graph preview of the first link in `content`: { url, title, description, image, siteName }.
+  linkPreview Json?
+
   userId String @db.ObjectId
   user   Users @relation(fields: [userId], references: [id], onDelete: Cascade)
   comments Comment[]
   likes    Like[]
   reports  Report[]
+  notifications Notification[]
+  saves    SavedPost[]
+
+  // A repost always points at the root original. Empty `content` = plain repost,
+  // otherwise a quote. Self-relations need NoAction on MongoDB, so deletePost
+  // cleans reposts up itself.
+  repostOfId String? @db.ObjectId
+  repostOf   Post?   @relation("Reposts", fields: [repostOfId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  reposts    Post[]  @relation("Reposts")
+
+  @@index([repostOfId, userId])
+}
+
+model SavedPost {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  createdAt DateTime @default(now())
+
+  userId String @db.ObjectId
+  user   Users  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  postId String @db.ObjectId
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@index([userId, createdAt])
 }
 
 model Comment {
@@ -162,6 +202,17 @@ model Comment {
   postId String @db.ObjectId
   post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
   reports Report[]
+  notifications Notification[]
+
+  mentionIds String[] @db.ObjectId
+
+  // Replies are one level deep: a reply to a reply attaches to the top-level
+  // comment. NoAction (self-relation), so deleteComment removes replies itself.
+  parentId String?   @db.ObjectId
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  replies  Comment[] @relation("CommentReplies")
+
+  @@index([postId, parentId, createdAt])
 }
   
 
@@ -256,6 +307,9 @@ model AIChatMessage {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   role      String   // "user" or "ai"
   text      String
+  feedback  Int?     // 1 = helpful, -1 = not helpful (AI messages only)
+  feedbackNote String?
+  meta      Json?    // AI messages: { question, sources, language, cacheable, error } for feedback learning
   createdAt DateTime @default(now())
 
   sessionId String   @db.ObjectId
@@ -320,4 +374,42 @@ model RecommendationPreference {
   @@unique([userId, candidateUserId])
   @@index([userId, status])
   @@index([source, updatedAt])
+}
+
+enum NotificationType {
+  like
+  comment
+  connection_request
+  connection_accepted
+  mention
+  reply
+  repost
+}
+
+model Notification {
+  id          String           @id @default(auto()) @map("_id") @db.ObjectId
+  type        NotificationType
+  isRead      Boolean          @default(false)
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  recipientId String @db.ObjectId
+  recipient   Users  @relation("notificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  actorId     String @db.ObjectId
+  actor       Users  @relation("notificationActor", fields: [actorId], references: [id], onDelete: Cascade)
+
+  postId      String? @db.ObjectId
+  post        Post?   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  commentId   String?  @db.ObjectId
+  comment     Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  connectionRequestId String?             @db.ObjectId
+  connectionRequest   ConnectionsRequest? @relation(fields: [connectionRequestId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, createdAt])
+  @@index([recipientId, isRead])
+  @@index([actorId, type, postId])
 }

@@ -1,5 +1,6 @@
 const { prisma } = require("../../prisma/prismaClient");
-const { publicUserSelect, toPublicUser } = require("../utils/authUtils");
+const { publicUserSelect, listUserSelect, toPublicUser } = require("../utils/authUtils");
+const { parseQuery, searchPeople, searchPosts, searchHashtags, suggestMentions } = require("../utils/searchUtils");
 
 const getSuggestedUsers = async (req, res) => {
     try {
@@ -35,7 +36,7 @@ const getSuggestedUsers = async (req, res) => {
 
         const users = await prisma.users.findMany({
             where: { id: { notIn: excludedArray } },
-            select: publicUserSelect,
+            select: listUserSelect,
             skip: skip,
             take: 5,
         });
@@ -46,20 +47,59 @@ const getSuggestedUsers = async (req, res) => {
     }
 };
 
+const SEARCH_TYPES = ["all", "people", "posts", "hashtags"];
+const SEMANTIC_MODES = ["auto", "on", "off"];
+
+// Legacy people-only endpoint used by Find People. Returns a plain array.
 const searchUserByName = async (req, res) => {
     try {
-        const { name } = req.params;
-        const users = await prisma.users.findMany({
-            where: {
-                OR: [
-                    { firstname: { contains: name, mode: "insensitive" } },
-                    { lastname: { contains: name, mode: "insensitive" } }
-                ]
-            },
-            select: publicUserSelect,
-        });
+        const parsed = parseQuery(req.params.name);
+        const { people } = await searchPeople(parsed, req.user.id, { limit: 30 });
+        res.json(people);
+    } catch (err) {
+        res.status(500).json({ message: "Internal Server Error", error: err.message });
+    }
+};
 
-        res.json(users);
+// GET /user/mention-suggestions?q=kun
+const getMentionSuggestions = async (req, res) => {
+    try {
+        res.json(await suggestMentions(req.query.q, req.user.id));
+    } catch (err) {
+        res.status(500).json({ message: "Internal Server Error", error: err.message });
+    }
+};
+
+// GET /search?q=react ml&type=all|people|posts|hashtags&limit=10&semantic=auto|on|off
+const globalSearch = async (req, res) => {
+    try {
+        const type = SEARCH_TYPES.includes(req.query.type) ? req.query.type : "all";
+        const semantic = SEMANTIC_MODES.includes(req.query.semantic) ? req.query.semantic : "auto";
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || (type === "all" ? 8 : 20), 1), 50);
+        const parsed = parseQuery(req.query.q);
+
+        if (parsed.tokens.length === 0) {
+            return res.status(400).json({ message: "Search query is required" });
+        }
+
+        const wants = (section) => type === "all" || type === section;
+        const [peopleResult, posts, hashtags] = await Promise.all([
+            wants("people") ? searchPeople(parsed, req.user.id, { limit, semantic }) : null,
+            wants("posts") ? searchPosts(parsed, { limit }) : null,
+            wants("hashtags") ? searchHashtags(parsed, { limit: Math.min(limit, 10) }) : null,
+        ]);
+
+        res.json({
+            query: parsed.query,
+            type,
+            people: peopleResult?.people ?? [],
+            posts: posts ?? [],
+            hashtags: hashtags ?? [],
+            semantic: {
+                used: Boolean(peopleResult?.semanticUsed),
+                available: peopleResult ? peopleResult.semanticAvailable : true,
+            },
+        });
     } catch (err) {
         res.status(500).json({ message: "Internal Server Error", error: err.message });
     }
@@ -222,6 +262,8 @@ const getHoverCardData = async (req, res) => {
 module.exports = {
     getSuggestedUsers,
     searchUserByName,
+    globalSearch,
+    getMentionSuggestions,
     getUserById,
     getHoverCardData
 };

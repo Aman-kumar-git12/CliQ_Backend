@@ -15,6 +15,12 @@ postRouter.post("/create/post", userAuth, upload.fields([{ name: "image", maxCou
 postRouter.delete("/delete/post/:postId", userAuth, postCrudController.deletePost);
 postRouter.put("/update/post/:postId", userAuth, validatePostUpdate, postCrudController.updatePost);
 
+// Reposts, saved posts, link previews
+postRouter.post("/user/post/repost/:postId", userAuth, postCrudController.repostPost);
+postRouter.post("/user/post/save/:postId", userAuth, postCrudController.toggleSavePost);
+postRouter.get("/user/saved-posts", userAuth, postCrudController.getSavedPosts);
+postRouter.get("/link-preview", userAuth, postCrudController.previewLink);
+
 // Feed
 postRouter.get("/post/feed", userAuth, postFeedController.getPostFeed);
 postRouter.post("/post/feed/random", userAuth, postFeedController.getRandomPostFeed);

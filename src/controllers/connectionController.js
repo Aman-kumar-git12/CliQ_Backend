@@ -1,6 +1,7 @@
 const { createHash } = require("crypto");
 const { prisma } = require("../../prisma/prismaClient");
 const fs = require('fs');
+const { createNotification, removeNotifications } = require("../utils/notificationUtils");
 
 const {
   LOG_FILE,
@@ -208,6 +209,14 @@ const sendRequest = async (req, res) => {
                         metadata: getRecommendationMetadata(req, { requestId: updated.id, resent: true })
                     });
                 }
+                if (status === "interested") {
+                    await createNotification({
+                        recipientId: toUserId,
+                        actorId: fromUserId,
+                        type: "connection_request",
+                        connectionRequestId: updated.id
+                    });
+                }
                 await invalidateRecommendationCache(fromUserId, toUserId);
                 return res.json({
                     message: status === "ignored"
@@ -240,6 +249,15 @@ const sendRequest = async (req, res) => {
             });
         }
 
+        if (status === "interested") {
+            await createNotification({
+                recipientId: toUserId,
+                actorId: fromUserId,
+                type: "connection_request",
+                connectionRequestId: data.id
+            });
+        }
+
         await invalidateRecommendationCache(fromUserId, toUserId);
 
         return res.json({
@@ -267,10 +285,25 @@ const reviewRequest = async (req, res) => {
             return res.status(404).json({ message: "Connection request not found" });
         }
 
+        if (findConnections.status !== "interested") {
+            return res.status(409).json({ message: `Request has already been ${findConnections.status}` });
+        }
+
         const data = await prisma.connectionsRequest.update({
             where: { id: requestId },
             data: { status },
         });
+
+        // The request has been handled, so its "wants to connect" alert is obsolete.
+        await removeNotifications({ type: "connection_request", connectionRequestId: requestId });
+        if (status === "accepted") {
+            await createNotification({
+                recipientId: data.fromUserId,
+                actorId: loggedInUserId,
+                type: "connection_accepted",
+                connectionRequestId: data.id
+            });
+        }
 
         await invalidateRecommendationCache(data.fromUserId, data.toUserId);
 

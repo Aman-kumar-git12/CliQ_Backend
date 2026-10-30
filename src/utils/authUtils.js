@@ -25,6 +25,10 @@ const publicUserSelect = {
     updatedAt: true,
 };
 
+// For bulk listings (search, suggestions): no email, so results can't be
+// used to harvest addresses. Single-profile views still use publicUserSelect.
+const { email: _email, ...listUserSelect } = publicUserSelect;
+
 const toSafeUser = (user) => {
     if (!user) return null;
 
@@ -60,9 +64,18 @@ const toPublicUser = (user) => {
     };
 };
 
+const toListUser = (user) => {
+    if (!user) return null;
+
+    const { email: _email, ...listUser } = toPublicUser(user);
+    return listUser;
+};
+
 module.exports = {
     safeUserSelect,
     publicUserSelect,
+    listUserSelect,
     toSafeUser,
     toPublicUser,
+    toListUser,
 };

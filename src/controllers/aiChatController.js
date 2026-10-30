@@ -59,7 +59,8 @@ const getHistoryBySessionId = async (req, res) => {
         const messages = history.map(msg => ({
             id: msg.id,
             role: msg.role,
-            text: msg.text
+            text: msg.text,
+            feedback: msg.feedback ?? null
         }));
 
         res.status(200).json({ messages });

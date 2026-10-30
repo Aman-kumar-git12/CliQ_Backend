@@ -6,7 +6,6 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 const cookieParser = require("cookie-parser");
 const rateLimit = require("express-rate-limit");
-const { createProxyMiddleware, fixRequestBody } = require('http-proxy-middleware');
 
 const routes = require("./routes/index");
 const { initialiseSocket } = require("./socket/socket");
@@ -188,23 +187,8 @@ app.use((req, res, next) => {
     next();
 });
 
-// 7. Proxy /api/agent → LLM service
-app.use('/api/agent', createProxyMiddleware({
-    target: process.env.LLM_SERVICE_URL || 'http://localhost:8000',
-    changeOrigin: true,
-    pathRewrite: { '^/': '/api/' },
-    on: {
-        proxyReq: fixRequestBody,
-        proxyRes: (proxyRes) => {
-            delete proxyRes.headers['access-control-allow-origin'];
-            delete proxyRes.headers['access-control-allow-credentials'];
-        }
-    },
-    onError: (err, req, res) => {
-        console.error('[Proxy Error] AI Agent unreachable:', err.message);
-        res.status(502).json({ message: 'AI Agent service is temporarily unavailable', error: err.message });
-    }
-}));
+// 7. The AI agent is reached only through authenticated routes (e.g. POST /aichat/stream).
+// There is deliberately no open /api/agent proxy: it let anyone spend the LLM quota and write chat history.
 
 // 8. Routes
 app.use("/", routes);

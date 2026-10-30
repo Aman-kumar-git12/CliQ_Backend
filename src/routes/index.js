@@ -11,6 +11,7 @@ const myConnectionRoutes = require("./myConnectionRoutes");
 const chatRoutes = require("./chatRoutes");
 const aiChatRoutes = require("./aiChatRoutes");
 const messageAiRoutes = require("./messageAiRoutes");
+const notificationRoutes = require("./notificationRoutes");
 
 router.use("/", authRoutes);
 router.use("/", profileRoutes);
@@ -22,5 +23,6 @@ router.use("/", myConnectionRoutes);
 router.use("/", chatRoutes);
 router.use("/", aiChatRoutes);
 router.use("/", messageAiRoutes);
+router.use("/", notificationRoutes);
 
 module.exports = router;

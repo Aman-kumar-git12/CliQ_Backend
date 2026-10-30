@@ -1,4 +1,5 @@
 const { prisma } = require("../../prisma/prismaClient");
+const { buildPostInclude, formatPosts } = require("../utils/postPresenter");
 
 const getPostFeed = async (req, res) => {
     try {
@@ -9,27 +10,7 @@ const getPostFeed = async (req, res) => {
 
         const posts = await prisma.post.findMany({
             where: { userId: { not: id } },
-            include: {
-                user: {
-                    select: {
-                        firstname: true,
-                        lastname: true,
-                        imageUrl: true
-                    }
-                },
-                _count: {
-                    select: {
-                        likes: { where: { isLiked: true } },
-                        comments: true
-                    }
-                },
-                likes: {
-                    where: { userId: id }
-                },
-                reports: {
-                    where: { userId: id }
-                }
-            },
+            include: buildPostInclude(id),
             skip: skip,
             take: limit,
             orderBy: { createdAt: "desc" }
@@ -39,15 +20,7 @@ const getPostFeed = async (req, res) => {
             where: { userId: { not: id } }
         });
 
-        const formattedPosts = posts.map(post => ({
-            ...post,
-            username: post.user ? `${post.user.firstname} ${post.user.lastname}` : "Anonymous",
-            avatar: post.user?.imageUrl || "https://github.com/shadcn.png",
-            likes: post._count.likes,
-            comments: post._count.comments,
-            isLiked: post.likes.length > 0 && post.likes[0].isLiked === true,
-            isReported: post.reports && post.reports.length > 0
-        }));
+        const formattedPosts = await formatPosts(posts);
 
         res.json({
             page,
@@ -91,34 +64,12 @@ const getRandomPostFeed = async (req, res) => {
             where: {
                 id: { in: randomIds }
             },
-            include: {
-                _count: {
-                    select: {
-                        likes: { where: { isLiked: true } },
-                        comments: true
-                    }
-                },
-                likes: { where: { userId: currentUserId } },
-                reports: { where: { userId: currentUserId } },
-                user: {
-                    select: {
-                        firstname: true,
-                        lastname: true,
-                        imageUrl: true
-                    }
-                }
-            }
+            include: buildPostInclude(currentUserId)
         });
 
-        const formattedPosts = posts.map(post => ({
-            ...post,
-            likes: post._count.likes,
-            comments: post._count.comments,
-            isLiked: post.likes.length > 0 && post.likes[0].isLiked === true,
-            isReported: post.reports && post.reports.length > 0,
-            username: post.user ? `${post.user.firstname} ${post.user.lastname}` : "Unknown",
-            avatar: post.user?.imageUrl || "https://github.com/shadcn.png"
-        }));
+        // `in` returns DB order; keep the sampled order.
+        const byId = new Map(posts.map((post) => [post.id, post]));
+        const formattedPosts = await formatPosts(randomIds.map((postId) => byId.get(postId)));
 
         res.json({
             hasMore: formattedPosts.length === limit,

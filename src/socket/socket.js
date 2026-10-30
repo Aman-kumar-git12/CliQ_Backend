@@ -5,6 +5,10 @@ const redisClient = require("../config/redisClient");
 
 let io;
 
+// Every socket joins its user's private room so server code can push
+// events (e.g. notifications) to all of that user's open tabs.
+const getUserRoom = (userId) => `user:${userId}`;
+
 const getAllowedOrigins = () =>
     String(process.env.FRONTEND_URL || "http://localhost:5173")
         .split(",")
@@ -80,6 +84,7 @@ const initialiseSocket = (server) => {
 
         const currentUser = socket.data.user;
         const currentUserId = currentUser.id;
+        socket.join(getUserRoom(currentUserId));
 
         socket.on("userConnected", async () => {
             // Mark online in Redis Hash 'userStatus'
@@ -108,6 +113,10 @@ const initialiseSocket = (server) => {
         socket.on("disconnect", async () => {
             console.log("user disconnected socketId: ", socket.id);
             if (currentUser) {
+                // Another tab (or the always-on notification socket) is still connected.
+                const remainingSockets = await io.in(getUserRoom(currentUserId)).fetchSockets();
+                if (remainingSockets.length > 0) return;
+
                 const timestamp = Date.now().toString();
                 try {
                     await redisClient.ensureReady();
@@ -233,4 +242,4 @@ const getIO = () => {
     }
     return io;
 }
-module.exports = { initialiseSocket, getIO }
+module.exports = { initialiseSocket, getIO, getUserRoom }

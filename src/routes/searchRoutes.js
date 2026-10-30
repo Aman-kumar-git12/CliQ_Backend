@@ -3,6 +3,8 @@ const searchRouter = express.Router();
 const searchController = require("../controllers/searchController");
 const { userAuth } = require("../middlewares/authMiddleware");
 
+searchRouter.get("/search", userAuth, searchController.globalSearch);
+searchRouter.get("/user/mention-suggestions", userAuth, searchController.getMentionSuggestions);
 searchRouter.get("/user/search/suggested", userAuth, searchController.getSuggestedUsers);
 searchRouter.get("/user/suggested", userAuth, searchController.getSuggestedUsers); // Legacy support fallback
 searchRouter.get("/user/search/:name", userAuth, searchController.searchUserByName);
