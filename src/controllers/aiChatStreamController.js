@@ -5,7 +5,8 @@ const redisClient = require("../config/redisClient");
 const llmServiceUrl = process.env.LLM_SERVICE_URL || "http://localhost:8000";
 const CACHE_TTL_SECONDS = 24 * 60 * 60;
 const MAX_QUESTION_CHARS = 1000;
-const FALLBACK_ANSWER = "Sorry, something went wrong on my side. Please try asking that again in a moment.";
+const AGENT_OFFLINE = "CliQ AI is offline right now. Please try again in a few minutes.";
+const AGENT_OFFLINE_HINDI = "CliQ AI अभी ऑफ़लाइन है। कृपया कुछ मिनट बाद फिर कोशिश करें।";
 
 // ---------- helpers ----------
 
@@ -249,10 +250,12 @@ const streamChat = async (req, res) => {
         if (!clientGone) {
             errorCode = errorCode || "agent_unreachable";
             console.error("AI chat stream failed:", error.message);
-            if (!answer) {
-                answer = FALLBACK_ANSWER;
-                writeEvent(res, "token", { text: FALLBACK_ANSWER });
-            }
+            // The agent itself is down or broke mid-answer, so say that instead of a generic error
+            const offline = /[ऀ-ॿ]/.test(message) ? AGENT_OFFLINE_HINDI : AGENT_OFFLINE;
+            const shown = answer ? `\n\n_${offline}_` : offline;
+            answer += shown;
+            writeEvent(res, "token", { text: shown });
+            writeEvent(res, "error", { code: errorCode, kind: "unreachable", retryAfter: null, message: offline });
         }
     }
 

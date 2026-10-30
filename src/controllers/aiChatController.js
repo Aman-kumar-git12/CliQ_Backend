@@ -60,7 +60,8 @@ const getHistoryBySessionId = async (req, res) => {
             id: msg.id,
             role: msg.role,
             text: msg.text,
-            feedback: msg.feedback ?? null
+            feedback: msg.feedback ?? null,
+            isError: Boolean(msg.meta?.error)
         }));
 
         res.status(200).json({ messages });
