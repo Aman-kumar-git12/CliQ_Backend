@@ -1,4 +1,5 @@
 const { prisma } = require("../../../prisma/prismaClient");
+const logger = require("../../utils/logger");
 const {
     getRecommendationSource,
     getRecommendationMetadata,
@@ -6,62 +7,58 @@ const {
     trackRecommendationEvent,
     invalidateRecommendationCache,
     RECOMMENDATION_PREVIEW_SELECT,
-    SMART_RECOMMENDATION_SOURCES
-} = require("../../utils/recommendationUtils");
+    SMART_RECOMMENDATION_SOURCES,
+} = require("../../utils/recommendations");
 
 const saveRecommendationCandidate = async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const candidateUserId = req.params.candidateUserId;
-        const source = getRecommendationSource(req, "smart_connections");
-        const metadata = getRecommendationMetadata(req, {
-            feedbackTags: normalizeTerms(req.body?.feedbackTags),
-        });
+    const userId = req.user.id;
+    const candidateUserId = req.params.candidateUserId;
+    const source = getRecommendationSource(req, "smart_connections");
+    const metadata = getRecommendationMetadata(req, {
+        feedbackTags: normalizeTerms(req.body?.feedbackTags),
+    });
 
-        if (userId === candidateUserId) {
-            return res.status(400).json({ message: "You cannot save yourself" });
-        }
-
-        const candidate = await prisma.users.findUnique({
-            where: { id: candidateUserId },
-            select: RECOMMENDATION_PREVIEW_SELECT,
-        });
-
-        if (!candidate) {
-            return res.status(404).json({ message: "Candidate user not found" });
-        }
-
-        const existing = await prisma.recommendationEvent.findFirst({
-            where: {
-                userId,
-                candidateUserId,
-                action: "saved",
-                source,
-            },
-            orderBy: { createdAt: "desc" },
-        });
-
-        if (!existing) {
-            await trackRecommendationEvent({
-                userId,
-                candidateUserId,
-                action: "saved",
-                source,
-                metadata: {
-                    ...metadata,
-                    savedFrom: source,
-                },
-            });
-        }
-        await invalidateRecommendationCache(userId);
-
-        res.json({
-            message: existing ? "Profile already saved" : "Profile saved successfully",
-            candidate,
-        });
-    } catch (error) {
-        res.status(500).json({ message: "Internal server error", error: error.message });
+    if (userId === candidateUserId) {
+        return res.status(400).json({ message: "You cannot save yourself" });
     }
+
+    const candidate = await prisma.users.findUnique({
+        where: { id: candidateUserId },
+        select: RECOMMENDATION_PREVIEW_SELECT,
+    });
+
+    if (!candidate) {
+        return res.status(404).json({ message: "Candidate user not found" });
+    }
+
+    const existing = await prisma.recommendationEvent.findFirst({
+        where: {
+            userId,
+            candidateUserId,
+            action: "saved",
+            source,
+        },
+        orderBy: { createdAt: "desc" },
+    });
+
+    if (!existing) {
+        await trackRecommendationEvent({
+            userId,
+            candidateUserId,
+            action: "saved",
+            source,
+            metadata: {
+                ...metadata,
+                savedFrom: source,
+            },
+        });
+    }
+    await invalidateRecommendationCache(userId);
+
+    res.json({
+        message: existing ? "Profile already saved" : "Profile saved successfully",
+        candidate,
+    });
 };
 
 const trackRecommendationShown = async (req, res) => {
@@ -115,32 +112,29 @@ const trackRecommendationShown = async (req, res) => {
             message: recentShown ? "Shown already tracked recently" : "Shown tracked",
         });
     } catch (error) {
-        return res.status(500).json({ message: "Failed to track shown state", error: error.message });
+        logger.error(`${req.method} ${req.originalUrl} failed:`, error);
+        return res.status(500).json({ message: "Failed to track shown state" });
     }
 };
 
 const removeSavedRecommendation = async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const candidateUserId = req.params.candidateUserId;
+    const userId = req.user.id;
+    const candidateUserId = req.params.candidateUserId;
 
-        const deleted = await prisma.recommendationEvent.deleteMany({
-            where: {
-                userId,
-                candidateUserId,
-                action: "saved",
-                source: { in: SMART_RECOMMENDATION_SOURCES },
-            },
-        });
-        await invalidateRecommendationCache(userId);
+    const deleted = await prisma.recommendationEvent.deleteMany({
+        where: {
+            userId,
+            candidateUserId,
+            action: "saved",
+            source: { in: SMART_RECOMMENDATION_SOURCES },
+        },
+    });
+    await invalidateRecommendationCache(userId);
 
-        res.json({
-            message: "Saved profile removed",
-            removedCount: deleted.count,
-        });
-    } catch (error) {
-        res.status(500).json({ message: "Internal server error", error: error.message });
-    }
+    res.json({
+        message: "Saved profile removed",
+        removedCount: deleted.count,
+    });
 };
 
 module.exports = { saveRecommendationCandidate, trackRecommendationShown, removeSavedRecommendation };

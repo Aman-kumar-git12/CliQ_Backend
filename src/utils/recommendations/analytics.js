@@ -82,7 +82,8 @@ const buildActionTrend = (events = [], days = 14) => {
     const buckets = new Map();
     for (let index = days - 1; index >= 0; index -= 1) {
         const day = new Date(today);
-        day.setHours(0, 0, 0, 0); day.setDate(day.getDate() - index);
+        day.setHours(0, 0, 0, 0);
+        day.setDate(day.getDate() - index);
         const key = day.toISOString().slice(0, 10);
         buckets.set(key, { shown: 0, saved: 0, ignored: 0, interested: 0 });
     }

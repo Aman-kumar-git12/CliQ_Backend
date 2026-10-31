@@ -1,7 +1,10 @@
 const express = require("express");
 const notificationRouter = express.Router();
-const notificationController = require("../controllers/notificationController");
+const notificationController = require("../controllers/notifications/notificationController");
 const { userAuth } = require("../middlewares/authMiddleware");
+const { validateObjectIdParam } = require("../middlewares/validationMiddleware");
+
+notificationRouter.param("notificationId", validateObjectIdParam);
 
 notificationRouter.get("/notifications", userAuth, notificationController.getNotifications);
 notificationRouter.get("/notifications/unread-count", userAuth, notificationController.getUnreadNotificationCount);

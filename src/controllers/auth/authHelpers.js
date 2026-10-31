@@ -1,30 +1,27 @@
 const { prisma } = require("../../../prisma/prismaClient");
 const jwt = require("jsonwebtoken");
-const {
-    createEmailVerificationToken,
-    createOTP,
-} = require("../../utils/emailVerificationUtils");
-const { sendVerificationEmail, sendOTPEmail } = require("../../utils/mailUtils");
+const { config } = require("../../config");
+const { createEmailVerificationToken, createOTP } = require("../../utils/auth/emailVerificationUtils");
+const { sendVerificationEmail, sendOTPEmail } = require("../../utils/auth/mailUtils");
 
 const MAX_UNBLOCK_REQUESTS_PER_ACCOUNT = 5;
 const UNBLOCK_REQUEST_COOLDOWN_MS = 60 * 60 * 1000;
 const MAX_VERIFICATION_RESENDS = 3;
 const VERIFICATION_RESEND_COOLDOWN_MS = 10 * 60 * 1000;
 
-const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
+const normalizeEmail = (email) =>
+    String(email || "")
+        .trim()
+        .toLowerCase();
 
 const createAuthToken = (user) =>
-    jwt.sign(
-        { userId: user.id, email: user.email },
-        process.env.JWT_SECRET_KEY,
-        { expiresIn: "30d" }
-    );
+    jwt.sign({ userId: user.id, email: user.email }, config.jwtSecret, { expiresIn: "30d" });
 
 const setAuthCookie = (res, token) => {
     res.cookie("auth_token", token, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        secure: config.isProduction,
+        sameSite: config.isProduction ? "none" : "lax",
         maxAge: 30 * 24 * 60 * 60 * 1000,
     });
 };
@@ -76,5 +73,5 @@ module.exports = {
     createAuthToken,
     setAuthCookie,
     sendFreshOTP,
-    sendFreshVerificationEmail
+    sendFreshVerificationEmail,
 };

@@ -1,20 +1,22 @@
-const { createClient } = require('redis');
+const { createClient } = require("redis");
+const { config } = require("./index");
+const logger = require("../utils/logger");
 
 const redisClient = createClient({
-    url: process.env.REDIS_URL || 'redis://127.0.0.1:6379'
+    url: config.redisUrl,
 });
 
 let connectPromise = null;
 let redisUnavailableLogged = false;
 
-redisClient.on('error', (err) => {
+redisClient.on("error", (err) => {
     if (!redisUnavailableLogged) {
-        console.log('Redis Client Error', err.message || err);
+        logger.info("Redis Client Error", err.message || err);
         redisUnavailableLogged = true;
     }
 });
-redisClient.on('connect', () => console.log('Redis Client Connected'));
-redisClient.on('ready', () => {
+redisClient.on("connect", () => logger.info("Redis Client Connected"));
+redisClient.on("ready", () => {
     redisUnavailableLogged = false;
 });
 
@@ -27,11 +29,12 @@ const ensureRedisReady = async () => {
         return connectPromise;
     }
 
-    connectPromise = redisClient.connect()
+    connectPromise = redisClient
+        .connect()
         .then(() => true)
         .catch((err) => {
             if (!redisUnavailableLogged) {
-                console.error('Redis unavailable, continuing without Redis cache:', err.message || err);
+                logger.error("Redis unavailable, continuing without Redis cache:", err.message || err);
                 redisUnavailableLogged = true;
             }
             return false;

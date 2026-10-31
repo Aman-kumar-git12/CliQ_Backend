@@ -1,15 +1,11 @@
-# Node modules
+# Dependencies
 node_modules/
 
-# Environment variables
+# Secrets
 .env
 
-
-
-# Notes file
+# Personal notes
 notes.md
 
-llm/__pycache__
-llm/routes/__pycache__
-llm/rag/__pycache__
-llm/core/__pycache__
+# OS
+.DS_Store

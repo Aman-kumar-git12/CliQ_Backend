@@ -1,11 +1,11 @@
 const { RECOMMENDATION_CONFIG, SMART_RECOMMENDATION_BATCH_SIZE } = require("./constants");
 const { clamp } = require("./coreUtils");
 const { buildProfileSignals, getProfileQualityScore, getProfileQualityLabel } = require("./profileSignals");
-const { detectExperienceLevel, detectProfileType, detectLocationBucket, detectBackgroundKey, getClusterKey } = require("./classification");
+const { detectProfileType, detectLocationBucket, detectBackgroundKey, getClusterKey } = require("./classification");
 const { getMatchConfidence, scoreExplicitPreferenceMatch, scoreCandidateReadiness } = require("./scoring");
+const logger = require("../logger");
 
-const getWeightedSum = (map, items = []) =>
-    items.reduce((sum, item) => sum + (map.get(item.toLowerCase()) || 0), 0);
+const getWeightedSum = (map, items = []) => items.reduce((sum, item) => sum + (map.get(item.toLowerCase()) || 0), 0);
 
 const applyFeedbackToRankings = (rankings = [], candidateMap = new Map(), feedbackProfile = null) => {
     if (!feedbackProfile || feedbackProfile.totalSignals === 0) {
@@ -96,7 +96,10 @@ const selectBalancedRankings = (rankings = [], candidateMap = new Map(), limit =
         });
     };
 
-    const exploitationSlots = Math.max(1, limit - Math.min(RECOMMENDATION_CONFIG.explorationSlots, Math.max(limit - 1, 0)));
+    const exploitationSlots = Math.max(
+        1,
+        limit - Math.min(RECOMMENDATION_CONFIG.explorationSlots, Math.max(limit - 1, 0)),
+    );
 
     while (remaining.length > 0 && selected.length < exploitationSlots) {
         let bestIndex = 0;
@@ -132,10 +135,14 @@ const selectBalancedRankings = (rankings = [], candidateMap = new Map(), limit =
 
             const signature = getCandidateSignature(candidate);
             const noveltyBoost =
-                ((clusterCounts.get(signature.clusterKey) || 0) === 0 ? 1 : 0) * RECOMMENDATION_CONFIG.explorationNoveltyWeight +
-                ((profileTypeCounts.get(signature.profileType) || 0) === 0 ? 1 : 0) * (RECOMMENDATION_CONFIG.explorationNoveltyWeight * 0.8) +
-                ((locationCounts.get(signature.locationBucket) || 0) === 0 ? 1 : 0) * (RECOMMENDATION_CONFIG.explorationNoveltyWeight * 0.55) +
-                ((backgroundCounts.get(signature.backgroundKey) || 0) === 0 ? 1 : 0) * (RECOMMENDATION_CONFIG.explorationNoveltyWeight * 0.55);
+                ((clusterCounts.get(signature.clusterKey) || 0) === 0 ? 1 : 0) *
+                    RECOMMENDATION_CONFIG.explorationNoveltyWeight +
+                ((profileTypeCounts.get(signature.profileType) || 0) === 0 ? 1 : 0) *
+                    (RECOMMENDATION_CONFIG.explorationNoveltyWeight * 0.8) +
+                ((locationCounts.get(signature.locationBucket) || 0) === 0 ? 1 : 0) *
+                    (RECOMMENDATION_CONFIG.explorationNoveltyWeight * 0.55) +
+                ((backgroundCounts.get(signature.backgroundKey) || 0) === 0 ? 1 : 0) *
+                    (RECOMMENDATION_CONFIG.explorationNoveltyWeight * 0.55);
 
             const explorationScore =
                 Math.max(ranking.score || 0, RECOMMENDATION_CONFIG.explorationMinScoreFloor) +
@@ -169,9 +176,10 @@ const buildSmartUserPayload = (users = [], rankings = []) => {
 
             const score = Number(ranking.score || 0);
             const profileQualityScore = getProfileQualityScore(candidate.expertise || {});
-            const reasons = Array.isArray(ranking.reasons) && ranking.reasons.length > 0
-                ? ranking.reasons
-                : rankingFallbackMap.get(ranking.id)?.reasons || ["Recommended for your network"];
+            const reasons =
+                Array.isArray(ranking.reasons) && ranking.reasons.length > 0
+                    ? ranking.reasons
+                    : rankingFallbackMap.get(ranking.id)?.reasons || ["Recommended for your network"];
 
             return {
                 ...candidate,
@@ -202,9 +210,8 @@ const mergeRankingsWithFallback = (rankedResults = [], fallbackRankings = []) =>
             return {
                 id: ranking.id,
                 score: typeof ranking.score === "number" ? ranking.score : fallback.score,
-                reasons: Array.isArray(ranking.reasons) && ranking.reasons.length > 0
-                    ? ranking.reasons
-                    : fallback.reasons,
+                reasons:
+                    Array.isArray(ranking.reasons) && ranking.reasons.length > 0 ? ranking.reasons : fallback.reasons,
             };
         })
         .filter(Boolean);
@@ -241,24 +248,34 @@ const buildRankedRecommendationBatch = ({
 
             return {
                 ...ranking,
-                score: Number(clamp((ranking.score || 0) + explicitPreferenceMatch.score + candidateReadiness.score, 0, 0.99).toFixed(4)),
+                score: Number(
+                    clamp(
+                        (ranking.score || 0) + explicitPreferenceMatch.score + candidateReadiness.score,
+                        0,
+                        0.99,
+                    ).toFixed(4),
+                ),
                 reasons,
             };
         });
-        const feedbackAdjustedRankings = applyFeedbackToRankings(preferenceAdjustedRankings, candidateMap, feedbackProfile);
-
-        const minScore = RECOMMENDATION_CONFIG.minimumMatchScore;
-        const qualifiedRankings = feedbackAdjustedRankings.filter(
-            (ranking) => ranking.score >= minScore
+        const feedbackAdjustedRankings = applyFeedbackToRankings(
+            preferenceAdjustedRankings,
+            candidateMap,
+            feedbackProfile,
         );
 
+        const minScore = RECOMMENDATION_CONFIG.minimumMatchScore;
+        const qualifiedRankings = feedbackAdjustedRankings.filter((ranking) => ranking.score >= minScore);
+
         const sourceRankings = qualifiedRankings.length > 0 ? qualifiedRankings : feedbackAdjustedRankings;
-        console.log(`[Ranking] Qualified: ${qualifiedRankings.length}/${feedbackAdjustedRankings.length} (min: ${minScore})`);
+        logger.info(
+            `[Ranking] Qualified: ${qualifiedRankings.length}/${feedbackAdjustedRankings.length} (min: ${minScore})`,
+        );
 
         const diverseRankings = selectBalancedRankings(sourceRankings, candidateMap, limit);
         return buildSmartUserPayload(candidates, diverseRankings).slice(0, limit);
     } catch (error) {
-        console.error("[Ranking] Batch construction failed:", error.message);
+        logger.error("[Ranking] Batch construction failed:", error.message);
         return buildSmartUserPayload(candidates, fallbackRankings.slice(0, limit));
     }
 };

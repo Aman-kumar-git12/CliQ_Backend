@@ -7,11 +7,20 @@ const detectExperienceLevel = (expertise = {}, signals = {}) => {
         normalizeText(expertise.experience),
         signals.headline,
         ...(signals.textFields || []),
-    ].join(" ").toLowerCase();
+    ]
+        .join(" ")
+        .toLowerCase();
 
     if (!source) return "experience:unknown";
     if (source.includes("student") || source.includes("intern")) return "experience:student";
-    if (source.includes("senior") || source.includes("lead") || source.includes("principal") || source.includes("10+") || source.includes("8+")) return "experience:senior";
+    if (
+        source.includes("senior") ||
+        source.includes("lead") ||
+        source.includes("principal") ||
+        source.includes("10+") ||
+        source.includes("8+")
+    )
+        return "experience:senior";
     if (source.includes("junior") || source.includes("entry")) return "experience:junior";
     if (source.includes("mid") || source.includes("3+") || source.includes("4+")) return "experience:mid";
     return "experience:general";
@@ -41,14 +50,12 @@ const detectLocationBucket = (expertise = {}, signals = {}) => {
 };
 
 const detectBackgroundKey = (signals = {}) => {
-    const source = [signals.headline, ...(signals.textFields || [])]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
+    const source = [signals.headline, ...(signals.textFields || [])].filter(Boolean).join(" ").toLowerCase();
     if (!source) return "background:general";
     if (source.includes("startup") || source.includes("founder")) return "background:startup";
     if (source.includes("enterprise") || source.includes("consult")) return "background:enterprise";
-    if (source.includes("student") || source.includes("college") || source.includes("university")) return "background:student";
+    if (source.includes("student") || source.includes("college") || source.includes("university"))
+        return "background:student";
     if (source.includes("freelance") || source.includes("agency")) return "background:freelance";
     if (source.includes("open source") || source.includes("community")) return "background:community";
     const token = [...(signals.tokens || [])][0];

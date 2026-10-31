@@ -1,6 +1,6 @@
 const express = require("express");
 const searchRouter = express.Router();
-const searchController = require("../controllers/searchController");
+const searchController = require("../controllers/search/searchController");
 const { userAuth } = require("../middlewares/authMiddleware");
 
 searchRouter.get("/search", userAuth, searchController.globalSearch);

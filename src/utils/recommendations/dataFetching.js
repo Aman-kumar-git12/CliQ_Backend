@@ -1,5 +1,11 @@
 const { prisma } = require("../../../prisma/prismaClient");
-const { RECOMMENDATION_PREFERENCE_ACTIVE_STATUSES, MAX_FEEDBACK_EVENTS, SMART_RECOMMENDATION_SOURCES, RECOMMENDATION_FEEDBACK_ACTIONS, RECOMMENDATION_PREVIEW_SELECT, NOT_PREFERRED_EXCLUSION_DAYS } = require("./constants");
+const {
+    RECOMMENDATION_PREFERENCE_ACTIVE_STATUSES,
+    MAX_FEEDBACK_EVENTS,
+    SMART_RECOMMENDATION_SOURCES,
+    RECOMMENDATION_PREVIEW_SELECT,
+    NOT_PREFERRED_EXCLUSION_DAYS,
+} = require("./constants");
 const { isWithinRecentDays } = require("./feedback");
 const { isDiscoverableProfile } = require("./profileSignals");
 const { buildCandidateActivitySummary, getActivityRecencyScore } = require("./classification");
@@ -10,10 +16,7 @@ const getPersistentExcludedIds = async (loggedInUserId) => {
         prisma.connectionsRequest.findMany({
             where: {
                 status: { in: ["accepted", "interested"] },
-                OR: [
-                    { toUserId: loggedInUserId },
-                    { fromUserId: loggedInUserId },
-                ],
+                OR: [{ toUserId: loggedInUserId }, { fromUserId: loggedInUserId }],
             },
             select: { fromUserId: true, toUserId: true },
         }),
@@ -22,8 +25,8 @@ const getPersistentExcludedIds = async (loggedInUserId) => {
                 userId: loggedInUserId,
                 action: "saved",
             },
-            select: { candidateUserId: true }
-        })
+            select: { candidateUserId: true },
+        }),
     ]);
 
     const excludedIds = new Set([loggedInUserId]);
@@ -105,10 +108,7 @@ const getAcceptedConnectionsForUser = async (userId) => {
     const connections = await prisma.connectionsRequest.findMany({
         where: {
             status: "accepted",
-            OR: [
-                { fromUserId: userId },
-                { toUserId: userId },
-            ],
+            OR: [{ fromUserId: userId }, { toUserId: userId }],
         },
         orderBy: { updatedAt: "desc" },
         take: 16,
@@ -241,10 +241,7 @@ const getCandidateActivityMap = async (candidateIds = []) => {
         }),
         prisma.connectionsRequest.findMany({
             where: {
-                OR: [
-                    { fromUserId: { in: uniqueIds } },
-                    { toUserId: { in: uniqueIds } },
-                ],
+                OR: [{ fromUserId: { in: uniqueIds } }, { toUserId: { in: uniqueIds } }],
             },
             select: {
                 fromUserId: true,
@@ -264,14 +261,13 @@ const getCandidateActivityMap = async (candidateIds = []) => {
                 receivedRequests: 0,
                 acceptedConnections: 0,
             },
-        ])
+        ]),
     );
 
     requests.forEach((request) => {
-        const touchedCandidates = [request.fromUserId, request.toUserId]
-            .filter((candidateId, index, source) =>
-                uniqueIds.includes(candidateId) && source.indexOf(candidateId) === index
-            );
+        const touchedCandidates = [request.fromUserId, request.toUserId].filter(
+            (candidateId, index, source) => uniqueIds.includes(candidateId) && source.indexOf(candidateId) === index,
+        );
 
         touchedCandidates.forEach((candidateId) => {
             const stats = statsByCandidate.get(candidateId);
@@ -283,7 +279,10 @@ const getCandidateActivityMap = async (candidateIds = []) => {
                 stats.recentInteractions += 1;
             }
 
-            if (request.toUserId === candidateId && (request.status === "interested" || request.status === "accepted")) {
+            if (
+                request.toUserId === candidateId &&
+                (request.status === "interested" || request.status === "accepted")
+            ) {
                 stats.receivedRequests += 1;
             }
 
@@ -304,25 +303,22 @@ const getCandidateActivityMap = async (candidateIds = []) => {
 
             const recencyScore = getActivityRecencyScore(candidate.updatedAt);
             const interactionVolumeScore = clamp(
-                (Math.min(stats.recentInteractions, 4) / 4) * 0.7
-                + (Math.min(stats.totalInteractions, 10) / 10) * 0.3,
+                (Math.min(stats.recentInteractions, 4) / 4) * 0.7 + (Math.min(stats.totalInteractions, 10) / 10) * 0.3,
                 0,
-                1
+                1,
             );
-            const activityScore = clamp((recencyScore * 0.55) + (interactionVolumeScore * 0.45), 0, 1);
+            const activityScore = clamp(recencyScore * 0.55 + interactionVolumeScore * 0.45, 0, 1);
             const responsivenessScore = clamp(
-                stats.receivedRequests > 0
-                    ? stats.acceptedConnections / stats.receivedRequests
-                    : recencyScore * 0.55,
+                stats.receivedRequests > 0 ? stats.acceptedConnections / stats.receivedRequests : recencyScore * 0.55,
                 0,
-                1
+                1,
             );
             const outcomeScore = clamp(
                 stats.totalInteractions > 0
                     ? (stats.acceptedConnections / stats.totalInteractions) * 1.4
                     : recencyScore * 0.4,
                 0,
-                1
+                1,
             );
 
             return [
@@ -339,7 +335,7 @@ const getCandidateActivityMap = async (candidateIds = []) => {
                     }),
                 },
             ];
-        })
+        }),
     );
 };
 
@@ -414,20 +410,67 @@ const buildRecommendationSections = async (userId) => {
     const shownEvents = pickLatestEventsByCandidate(events.filter((event) => event.action === "shown"));
     const savedEvents = pickLatestEventsByCandidate(events.filter((event) => event.action === "saved"));
     const interestedEvents = new Map(interestedRequests.map((request) => [request.toUserId, request]));
-    const preferredEvents = new Map(preferences.filter((p) => p.status === "preferred").map((p) => [p.candidateUserId, p]));
-    const notPreferredEvents = new Map(preferences.filter((p) => p.status === "not_preferred").map((p) => [p.candidateUserId, p]));
+    const preferredEvents = new Map(
+        preferences.filter((p) => p.status === "preferred").map((p) => [p.candidateUserId, p]),
+    );
+    const notPreferredEvents = new Map(
+        preferences.filter((p) => p.status === "not_preferred").map((p) => [p.candidateUserId, p]),
+    );
     const ignoredEvents = pickLatestEventsByCandidate(events.filter((event) => event.action === "ignored"));
 
-    const candidateIds = [...shownEvents.keys(), ...savedEvents.keys(), ...interestedEvents.keys(), ...preferredEvents.keys(), ...notPreferredEvents.keys(), ...ignoredEvents.keys()];
+    const candidateIds = [
+        ...shownEvents.keys(),
+        ...savedEvents.keys(),
+        ...interestedEvents.keys(),
+        ...preferredEvents.keys(),
+        ...notPreferredEvents.keys(),
+        ...ignoredEvents.keys(),
+    ];
     const candidateMap = await getCandidatePreviewMap(candidateIds);
 
     return {
-        shown: [...shownEvents.values()].map((e) => { const c = candidateMap.get(e.candidateUserId); return c ? createSectionItem("shown", c, e) : null; }).filter(Boolean),
-        saved: [...savedEvents.values()].map((e) => { const c = candidateMap.get(e.candidateUserId); return c ? createSectionItem("saved", c, e) : null; }).filter(Boolean),
-        interested: [...interestedEvents.values()].map((r) => { const c = candidateMap.get(r.toUserId); return c ? createSectionItem("interested", c, { recordedAt: r.updatedAt, source: "connection_request", requestId: r.id }) : null; }).filter(Boolean),
-        preferred: [...preferredEvents.values()].map((e) => { const c = candidateMap.get(e.candidateUserId); return c ? createSectionItem("preferred", c, { recordedAt: e.updatedAt, source: e.source }) : null; }).filter(Boolean),
-        not_preferred: [...notPreferredEvents.values()].map((p) => { const c = candidateMap.get(p.candidateUserId); return c ? createSectionItem("not_preferred", c, { recordedAt: p.updatedAt, source: p.source }) : null; }).filter(Boolean),
-        ignored: [...ignoredEvents.values()].map((e) => { const c = candidateMap.get(e.candidateUserId); return c ? createSectionItem("ignored", c, e) : null; }).filter(Boolean),
+        shown: [...shownEvents.values()]
+            .map((e) => {
+                const c = candidateMap.get(e.candidateUserId);
+                return c ? createSectionItem("shown", c, e) : null;
+            })
+            .filter(Boolean),
+        saved: [...savedEvents.values()]
+            .map((e) => {
+                const c = candidateMap.get(e.candidateUserId);
+                return c ? createSectionItem("saved", c, e) : null;
+            })
+            .filter(Boolean),
+        interested: [...interestedEvents.values()]
+            .map((r) => {
+                const c = candidateMap.get(r.toUserId);
+                return c
+                    ? createSectionItem("interested", c, {
+                          recordedAt: r.updatedAt,
+                          source: "connection_request",
+                          requestId: r.id,
+                      })
+                    : null;
+            })
+            .filter(Boolean),
+        preferred: [...preferredEvents.values()]
+            .map((e) => {
+                const c = candidateMap.get(e.candidateUserId);
+                return c ? createSectionItem("preferred", c, { recordedAt: e.updatedAt, source: e.source }) : null;
+            })
+            .filter(Boolean),
+        not_preferred: [...notPreferredEvents.values()]
+            .map((p) => {
+                const c = candidateMap.get(p.candidateUserId);
+                return c ? createSectionItem("not_preferred", c, { recordedAt: p.updatedAt, source: p.source }) : null;
+            })
+            .filter(Boolean),
+        ignored: [...ignoredEvents.values()]
+            .map((e) => {
+                const c = candidateMap.get(e.candidateUserId);
+                return c ? createSectionItem("ignored", c, e) : null;
+            })
+            .filter(Boolean),
     };
 };
 

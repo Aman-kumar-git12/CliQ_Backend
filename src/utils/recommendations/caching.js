@@ -1,6 +1,7 @@
 const { createHash } = require("crypto");
 const redisClient = require("../../config/redisClient");
 const { SMART_RECOMMENDATION_CACHE_TTL_SECONDS } = require("./constants");
+const logger = require("../logger");
 
 const recommendationCacheMemory = new Map();
 
@@ -12,8 +13,7 @@ const getRecommendationCachePayload = (users = [], strategy = "fallback") => ({
     cachedAt: new Date().toISOString(),
 });
 
-const getRecommendationCacheHash = (payload = {}) =>
-    createHash("sha1").update(JSON.stringify(payload)).digest("hex");
+const getRecommendationCacheHash = (payload = {}) => createHash("sha1").update(JSON.stringify(payload)).digest("hex");
 
 const getMemoryCachedRecommendations = (key) => {
     const entry = recommendationCacheMemory.get(key);
@@ -44,15 +44,15 @@ const getCachedRecommendationBatch = async (userId) => {
         if (isRedisReady && redisClient?.isReady) {
             const raw = await redisClient.get(cacheKey);
             if (raw) {
-                console.log(`[Cache] Hit for user ${userId}`);
+                logger.info(`[Cache] Hit for user ${userId}`);
                 return JSON.parse(raw);
             }
         }
     } catch (error) {
-        console.error(`[Cache] Read failed for user ${userId}:`, error.message);
+        logger.error(`[Cache] Read failed for user ${userId}:`, error.message);
     }
 
-    console.log(`[Cache] Miss for user ${userId}, falling back to memory`);
+    logger.info(`[Cache] Miss for user ${userId}, falling back to memory`);
     return getMemoryCachedRecommendations(cacheKey);
 };
 
@@ -70,7 +70,7 @@ const setCachedRecommendationBatch = async (userId, payload, ttlSeconds = SMART_
             return;
         }
     } catch (error) {
-        console.error("Recommendation cache write failed:", error.message);
+        logger.error("Recommendation cache write failed:", error.message);
     }
 
     setMemoryCachedRecommendations(cacheKey, normalizedPayload, ttlSeconds);
@@ -90,11 +90,11 @@ const invalidateRecommendationCache = async (...userIds) => {
                     await redisClient.del(cacheKey);
                 }
             } catch (error) {
-                console.error("Recommendation cache delete failed:", error.message);
+                logger.error("Recommendation cache delete failed:", error.message);
             }
 
             deleteMemoryCachedRecommendations(cacheKey);
-        })
+        }),
     );
 };
 

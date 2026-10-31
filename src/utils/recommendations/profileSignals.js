@@ -10,11 +10,19 @@ const { RECOMMENDATION_CONFIG } = require("./constants");
 
 const buildExplicitPreferenceProfile = (expertise = {}) => {
     const lookingFor = normalizeTerms(getExplicitPreferenceValue(expertise, "lookingFor", "openTo", "connectionGoals"));
-    const preferredRoles = normalizeTerms(getExplicitPreferenceValue(expertise, "preferredRoles", "roles", "desiredRoles"));
-    const preferredIndustries = normalizeTerms(getExplicitPreferenceValue(expertise, "preferredIndustries", "industries", "desiredIndustries"));
-    const preferredLocations = normalizeTerms(getExplicitPreferenceValue(expertise, "preferredLocations", "locations", "targetLocations"));
+    const preferredRoles = normalizeTerms(
+        getExplicitPreferenceValue(expertise, "preferredRoles", "roles", "desiredRoles"),
+    );
+    const preferredIndustries = normalizeTerms(
+        getExplicitPreferenceValue(expertise, "preferredIndustries", "industries", "desiredIndustries"),
+    );
+    const preferredLocations = normalizeTerms(
+        getExplicitPreferenceValue(expertise, "preferredLocations", "locations", "targetLocations"),
+    );
     const preferredLanguages = normalizeTerms(getExplicitPreferenceValue(expertise, "preferredLanguages", "languages"));
-    const preferredExperienceLevels = normalizeTerms(getExplicitPreferenceValue(expertise, "preferredExperienceLevels", "experienceLevels"));
+    const preferredExperienceLevels = normalizeTerms(
+        getExplicitPreferenceValue(expertise, "preferredExperienceLevels", "experienceLevels"),
+    );
     const dealBreakers = normalizeTerms(getExplicitPreferenceValue(expertise, "dealBreakers", "avoid", "avoidTypes"));
 
     const summaryParts = [
@@ -46,10 +54,10 @@ const buildProfileSignals = (expertise = {}) => {
     const headline = isMeaningfulText(expertise.description)
         ? normalizeText(expertise.description)
         : isMeaningfulText(expertise.aboutYou)
-            ? normalizeText(expertise.aboutYou)
-                : isMeaningfulText(expertise.experience)
-                    ? normalizeText(expertise.experience)
-                    : "";
+          ? normalizeText(expertise.aboutYou)
+          : isMeaningfulText(expertise.experience)
+            ? normalizeText(expertise.experience)
+            : "";
 
     const textFields = [
         expertise.description,
@@ -90,12 +98,16 @@ const buildProfileSignals = (expertise = {}) => {
 
 const getProfileQualityScore = (expertise = {}) => {
     const signals = buildProfileSignals(expertise);
-    const qualityScore = Math.max(0, Math.min(1,
-        (signals.headline ? 0.32 : 0) +
-        Math.min(signals.skills.length, 5) * 0.09 +
-        Math.min(signals.interests.length, 4) * 0.06 +
-        Math.min(signals.textFields.length, 4) * 0.08
-    ));
+    const qualityScore = Math.max(
+        0,
+        Math.min(
+            1,
+            (signals.headline ? 0.32 : 0) +
+                Math.min(signals.skills.length, 5) * 0.09 +
+                Math.min(signals.interests.length, 4) * 0.06 +
+                Math.min(signals.textFields.length, 4) * 0.08,
+        ),
+    );
     return Number(qualityScore.toFixed(4));
 };
 
@@ -109,10 +121,10 @@ const getProfileQualityLabel = (qualityScore = 0) => {
 const isDiscoverableProfile = (expertise = {}) => {
     const signals = buildProfileSignals(expertise);
     const hasCoreSignal =
-        Boolean(signals.headline)
-        || signals.skills.length > 0
-        || signals.interests.length > 0
-        || signals.textFields.length > 0;
+        Boolean(signals.headline) ||
+        signals.skills.length > 0 ||
+        signals.interests.length > 0 ||
+        signals.textFields.length > 0;
 
     return hasCoreSignal && signals.completeness >= RECOMMENDATION_CONFIG.minDiscoverableCompleteness;
 };

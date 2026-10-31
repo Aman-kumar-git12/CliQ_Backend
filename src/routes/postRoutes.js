@@ -1,17 +1,28 @@
 const express = require("express");
 const postRouter = express.Router();
-const postCrudController = require("../controllers/postCrudController");
-const postFeedController = require("../controllers/postFeedController");
-const postInteractionController = require("../controllers/postInteractionController");
+const postCrudController = require("../controllers/posts/postCrudController");
+const postFeedController = require("../controllers/posts/postFeedController");
+const postInteractionController = require("../controllers/posts/postInteractionController");
 const { userAuth } = require("../middlewares/authMiddleware");
-const { validatePost, validatePostUpdate } = require("../middlewares/validationMiddleware");
+const { validateObjectIdParam, validatePost, validatePostUpdate } = require("../middlewares/validationMiddleware");
 const upload = require("../upload/upload");
+
+for (const name of ["userId", "postId", "commentId"]) postRouter.param(name, validateObjectIdParam);
 
 // CRUD
 postRouter.get("/user/post", userAuth, postCrudController.getAllPosts);
 postRouter.get("/user/posts/:userId", userAuth, postCrudController.getPostsByUserId);
 postRouter.get("/user/post/:postId", userAuth, postCrudController.getPostById);
-postRouter.post("/create/post", userAuth, upload.fields([{ name: "image", maxCount: 1 }, { name: "video", maxCount: 1 }]), validatePost, postCrudController.createPost);
+postRouter.post(
+    "/create/post",
+    userAuth,
+    upload.fields([
+        { name: "image", maxCount: 1 },
+        { name: "video", maxCount: 1 },
+    ]),
+    validatePost,
+    postCrudController.createPost,
+);
 postRouter.delete("/delete/post/:postId", userAuth, postCrudController.deletePost);
 postRouter.put("/update/post/:postId", userAuth, validatePostUpdate, postCrudController.updatePost);
 

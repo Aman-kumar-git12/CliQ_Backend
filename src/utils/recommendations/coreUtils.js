@@ -12,9 +12,7 @@ const isMeaningfulText = (value) => {
 };
 
 const normalizeTerms = (value) => {
-    const rawItems = Array.isArray(value)
-        ? value
-        : normalizeText(value).split(/[,|\n;/]+/);
+    const rawItems = Array.isArray(value) ? value : normalizeText(value).split(/[,|\n;/]+/);
 
     const deduped = new Map();
     rawItems.forEach((item) => {
@@ -60,8 +58,7 @@ const tokenize = (values = []) => {
     const tokens = new Set();
     values.forEach((value) => {
         const text = normalizeText(value).toLowerCase();
-        text
-            .split(/[^a-z0-9+#.]+/i)
+        text.split(/[^a-z0-9+#.]+/i)
             .map((token) => token.trim())
             .filter((token) => token.length >= 3)
             .forEach((token) => tokens.add(token));

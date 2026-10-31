@@ -1,15 +1,15 @@
 const express = require("express");
 const authRouter = express.Router();
-const authController = require("../controllers/auth/index");
-const googleAuthController = require("../controllers/googleAuthController");
-const { optionalUserAuth, userAuth } = require("../middlewares/authMiddleware");
+const authController = require("../controllers/auth");
+const googleAuthController = require("../controllers/auth/googleAuthController");
+const { optionalUserAuth } = require("../middlewares/authMiddleware");
 const { validateSignupData } = require("../middlewares/validationMiddleware");
 
 authRouter.get("/auth/me", optionalUserAuth, authController.getMe);
 authRouter.post("/signup", validateSignupData, authController.signup);
 authRouter.post("/login", authController.login);
-authRouter.get("/auth/verify-email", authController.verifyEmail);       // legacy token link
-authRouter.post("/auth/verify-otp", authController.verifyOTP);           // new OTP flow
+authRouter.get("/auth/verify-email", authController.verifyEmail); // legacy token link
+authRouter.post("/auth/verify-otp", authController.verifyOTP); // new OTP flow
 
 // Forgot Password
 authRouter.post("/auth/forgot-password", authController.forgotPassword);

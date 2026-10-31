@@ -1,7 +1,10 @@
 const express = require("express");
 const userRouter = express.Router();
-const userController = require("../controllers/userController");
+const userController = require("../controllers/users/userController");
 const { userAuth, adminAuth } = require("../middlewares/authMiddleware");
+const { validateObjectIdParam } = require("../middlewares/validationMiddleware");
+
+userRouter.param("userId", validateObjectIdParam);
 
 userRouter.get("/user/requests", userAuth, userController.getRequests);
 userRouter.get("/user/connections", userAuth, userController.getConnections);

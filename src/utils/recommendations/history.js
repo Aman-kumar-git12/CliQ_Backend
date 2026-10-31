@@ -18,8 +18,12 @@ const buildHistoryProfile = (userExpertise = {}, feedbackProfile = null, accepte
     const avoidedSkills = feedbackProfile ? getTopWeightedTerms(feedbackProfile.skills, "negative", 6) : [];
     const avoidedInterests = feedbackProfile ? getTopWeightedTerms(feedbackProfile.interests, "negative", 5) : [];
     const avoidedThemes = feedbackProfile ? getTopWeightedTerms(feedbackProfile.tokens, "negative", 6) : [];
-    const likedExperienceLevels = feedbackProfile ? getTopWeightedTerms(feedbackProfile.experienceLevels, "positive", 3) : [];
-    const avoidedExperienceLevels = feedbackProfile ? getTopWeightedTerms(feedbackProfile.experienceLevels, "negative", 3) : [];
+    const likedExperienceLevels = feedbackProfile
+        ? getTopWeightedTerms(feedbackProfile.experienceLevels, "positive", 3)
+        : [];
+    const avoidedExperienceLevels = feedbackProfile
+        ? getTopWeightedTerms(feedbackProfile.experienceLevels, "negative", 3)
+        : [];
     const likedLocations = feedbackProfile ? getTopWeightedTerms(feedbackProfile.locations, "positive", 4) : [];
     const avoidedLocations = feedbackProfile ? getTopWeightedTerms(feedbackProfile.locations, "negative", 4) : [];
 
@@ -32,16 +36,24 @@ const buildHistoryProfile = (userExpertise = {}, feedbackProfile = null, accepte
         likedExperienceLevels.length > 0 ? `Positive experience fit: ${likedExperienceLevels.join(", ")}` : "",
         likedLocations.length > 0 ? `Positive locations: ${likedLocations.join(", ")}` : "",
         explicitPreferenceProfile.summary || "",
-    ].filter(Boolean).join(". ");
+    ]
+        .filter(Boolean)
+        .join(". ");
 
     const negativeSummary = [
         avoidedSkills.length > 0 ? `Often skips skills like ${avoidedSkills.join(", ")}` : "",
         avoidedInterests.length > 0 ? `Often skips interests around ${avoidedInterests.join(", ")}` : "",
         avoidedThemes.length > 0 ? `Avoided themes: ${avoidedThemes.join(", ")}` : "",
-        avoidedExperienceLevels.length > 0 ? `Often skips experience levels like ${avoidedExperienceLevels.join(", ")}` : "",
+        avoidedExperienceLevels.length > 0
+            ? `Often skips experience levels like ${avoidedExperienceLevels.join(", ")}`
+            : "",
         avoidedLocations.length > 0 ? `Often skips locations like ${avoidedLocations.join(", ")}` : "",
-        explicitPreferenceProfile.dealBreakers.length > 0 ? `Explicit deal breakers: ${explicitPreferenceProfile.dealBreakers.join(", ")}` : "",
-    ].filter(Boolean).join(". ");
+        explicitPreferenceProfile.dealBreakers.length > 0
+            ? `Explicit deal breakers: ${explicitPreferenceProfile.dealBreakers.join(", ")}`
+            : "",
+    ]
+        .filter(Boolean)
+        .join(". ");
 
     return {
         explicitPreferenceProfile,
@@ -68,7 +80,8 @@ const buildHistoryProfile = (userExpertise = {}, feedbackProfile = null, accepte
 const buildCompositeMatchingProfile = (userExpertise = {}, historyProfile = null) => {
     if (!historyProfile) return userExpertise || {};
 
-    const explicitPreferenceProfile = historyProfile.explicitPreferenceProfile || buildExplicitPreferenceProfile(userExpertise);
+    const explicitPreferenceProfile =
+        historyProfile.explicitPreferenceProfile || buildExplicitPreferenceProfile(userExpertise);
 
     const mergedSkills = normalizeTerms([
         ...(Array.isArray(userExpertise.skills) ? userExpertise.skills : normalizeTerms(userExpertise.skills)),

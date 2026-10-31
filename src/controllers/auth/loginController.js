@@ -1,28 +1,26 @@
 const { prisma } = require("../../../prisma/prismaClient");
 const bcrypt = require("bcrypt");
-const { safeUserSelect, toSafeUser } = require("../../utils/authUtils");
+const { safeUserSelect, toSafeUser } = require("../../utils/auth/authUtils");
 const { normalizeEmail, createAuthToken, setAuthCookie } = require("./authHelpers");
-const { primeRecommendationFeedForUser } = require("../recommendationActionController");
+const { primeRecommendationFeedForUser } = require("../recommendations");
+const { config } = require("../../config");
+const logger = require("../../utils/logger");
 
 const getMe = async (req, res) => {
-    try {
-        if (!req.user) {
-            return res.json({ user: null });
-        }
-
-        if (req.user.isBlocked) {
-            return res.status(403).json({ message: "Your account has been blocked. Please contact support." });
-        }
-
-        const user = await prisma.users.findUnique({
-            where: { id: req.user.id },
-            select: safeUserSelect,
-        });
-
-        return res.json({ user });
-    } catch (err) {
-        return res.status(500).json({ message: "Internal server error", error: err.message });
+    if (!req.user) {
+        return res.json({ user: null });
     }
+
+    if (req.user.isBlocked) {
+        return res.status(403).json({ message: "Your account has been blocked. Please contact support." });
+    }
+
+    const user = await prisma.users.findUnique({
+        where: { id: req.user.id },
+        select: safeUserSelect,
+    });
+
+    return res.json({ user });
 };
 
 const login = async (req, res) => {
@@ -63,9 +61,9 @@ const login = async (req, res) => {
 
         return res.send({ message: "Login successful", user: toSafeUser(user) });
     } catch (err) {
+        logger.error(`${req.method} ${req.originalUrl} failed:`, err);
         res.status(500).json({
             message: "Internal server error",
-            error: err.message
         });
     }
 };
@@ -73,8 +71,8 @@ const login = async (req, res) => {
 const logout = (req, res) => {
     res.clearCookie("auth_token", {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax"
+        secure: config.isProduction,
+        sameSite: config.isProduction ? "none" : "lax",
     });
 
     res.json({ message: "Logout successful" });

@@ -1,18 +1,19 @@
 const { prisma } = require("../../../prisma/prismaClient");
 const { SMART_RECOMMENDATION_RESPONSE_SIZE } = require("./constants");
+const logger = require("../logger");
 
 const trackRecommendationEvents = async (events = []) => {
     if (!events.length) return;
 
     try {
-        console.log(`[Analytics] Attempting to record ${events.length} events...`);
+        logger.info(`[Analytics] Attempting to record ${events.length} events...`);
         for (const event of events) {
-            console.log(`[Analytics] Creating event: ${event.action} for candidate ${event.candidateUserId}`);
+            logger.info(`[Analytics] Creating event: ${event.action} for candidate ${event.candidateUserId}`);
             await prisma.recommendationEvent.create({ data: event });
         }
-        console.log(`[Analytics] Successfully recorded all ${events.length} events.`);
+        logger.info(`[Analytics] Successfully recorded all ${events.length} events.`);
     } catch (error) {
-        console.error("Recommendation analytics write failed:", error);
+        logger.error("Recommendation analytics write failed:", error);
     }
 };
 
@@ -22,13 +23,13 @@ const trackRecommendationEvent = async (event) => {
     try {
         await prisma.recommendationEvent.create({ data: event });
     } catch (error) {
-        console.error("Recommendation analytics write failed:", error.message);
+        logger.error("Recommendation analytics write failed:", error.message);
     }
 };
 
 const trackShownCandidates = async (userId, users = [], delivery = "cache") => {
     if (!users.length) return;
-    console.log(`[ShownTracking] Tracking ${users.length} candidates for user ${userId} (${delivery})`);
+    logger.info(`[ShownTracking] Tracking ${users.length} candidates for user ${userId} (${delivery})`);
 
     await trackRecommendationEvents(
         users.map((candidate) => ({
@@ -45,7 +46,7 @@ const trackShownCandidates = async (userId, users = [], delivery = "cache") => {
                 selectionMode: candidate.selectionMode,
                 diversity: candidate.diversity,
             },
-        }))
+        })),
     );
 };
 

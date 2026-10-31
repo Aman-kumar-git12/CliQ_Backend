@@ -9,7 +9,10 @@ const getSharedItems = (left = [], right = []) => {
 };
 
 const getMatchConfidence = (score, profileQualityScore = 1) => {
-    if (score < RECOMMENDATION_CONFIG.lowConfidenceScore || profileQualityScore < RECOMMENDATION_CONFIG.lowProfileQualityScore) {
+    if (
+        score < RECOMMENDATION_CONFIG.lowConfidenceScore ||
+        profileQualityScore < RECOMMENDATION_CONFIG.lowProfileQualityScore
+    ) {
         return "Low-confidence match";
     }
     if (score >= 0.82) return "High match";
@@ -28,10 +31,7 @@ const scoreExplicitPreferenceMatch = (userExpertise = {}, candidate = {}) => {
     const candidateRole = detectProfileType(candidateSignals);
     const candidateLocation = detectLocationBucket(candidate.expertise || {}, candidateSignals);
     const candidateExperienceLevel = detectExperienceLevel(candidate.expertise || {}, candidateSignals);
-    const candidateIndustries = normalizeTerms([
-        candidate.expertise?.industry,
-        candidate.expertise?.industries,
-    ]);
+    const candidateIndustries = normalizeTerms([candidate.expertise?.industry, candidate.expertise?.industries]);
     const candidateLanguages = normalizeTerms(candidate.expertise?.languages);
     const candidateLookingFor = normalizeTerms([
         candidate.expertise?.lookingFor,
@@ -49,7 +49,10 @@ const scoreExplicitPreferenceMatch = (userExpertise = {}, candidate = {}) => {
         ...candidateLookingFor,
         candidateSignals.headline,
         ...candidateSignals.textFields,
-    ].filter(Boolean).join(" ").toLowerCase();
+    ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
 
     let score = 0;
     const reasons = [];
@@ -70,7 +73,7 @@ const scoreExplicitPreferenceMatch = (userExpertise = {}, candidate = {}) => {
     matchList(preferenceProfile.preferredExperienceLevels, 0.04, "Experience fit");
 
     const dealBreakerMatches = preferenceProfile.dealBreakers.filter((item) =>
-        candidateSearchSpace.includes(item.toLowerCase())
+        candidateSearchSpace.includes(item.toLowerCase()),
     );
     if (dealBreakerMatches.length > 0) {
         score -= Math.min(dealBreakerMatches.length, 2) * 0.07;
@@ -86,11 +89,11 @@ const scoreExplicitPreferenceMatch = (userExpertise = {}, candidate = {}) => {
 const scoreCandidateReadiness = (candidate = {}) => {
     const signals = candidate.rankingSignals || {};
     const score = clamp(
-        (signals.activityScore || 0) * 0.08
-        + (signals.responsivenessScore || 0) * 0.1
-        + (signals.outcomeScore || 0) * 0.12,
+        (signals.activityScore || 0) * 0.08 +
+            (signals.responsivenessScore || 0) * 0.1 +
+            (signals.outcomeScore || 0) * 0.12,
         0,
-        0.24
+        0.24,
     );
 
     const reasons = [];

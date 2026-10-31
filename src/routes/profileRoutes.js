@@ -1,7 +1,7 @@
 const express = require("express");
 const profileRouter = express.Router();
-const profileController = require("../controllers/profileController");
-const expertiseController = require("../controllers/expertiseController");
+const profileController = require("../controllers/profile/profileController");
+const expertiseController = require("../controllers/profile/expertiseController");
 const { userAuth } = require("../middlewares/authMiddleware");
 const { validateProfileEdit } = require("../middlewares/validationMiddleware");
 const upload = require("../upload/upload");

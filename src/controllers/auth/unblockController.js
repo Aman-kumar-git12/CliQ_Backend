@@ -1,12 +1,12 @@
 const { prisma } = require("../../../prisma/prismaClient");
-const {
-    MAX_UNBLOCK_REQUESTS_PER_ACCOUNT,
-    UNBLOCK_REQUEST_COOLDOWN_MS
-} = require("./authHelpers");
+const { MAX_UNBLOCK_REQUESTS_PER_ACCOUNT, UNBLOCK_REQUEST_COOLDOWN_MS } = require("./authHelpers");
+const logger = require("../../utils/logger");
 
 const createUnblockRequest = async (req, res) => {
     try {
-        const email = String(req.body?.email || "").trim().toLowerCase();
+        const email = String(req.body?.email || "")
+            .trim()
+            .toLowerCase();
         const message = String(req.body?.message || "").trim();
 
         if (!message) {
@@ -27,7 +27,9 @@ const createUnblockRequest = async (req, res) => {
         }
 
         if (!user.isBlocked) {
-            return res.status(400).json({ message: "This account is not blocked, so an unblock request is not needed." });
+            return res
+                .status(400)
+                .json({ message: "This account is not blocked, so an unblock request is not needed." });
         }
 
         const [requestCount, latestRequest] = await Promise.all([
@@ -72,9 +74,9 @@ const createUnblockRequest = async (req, res) => {
             request,
         });
     } catch (err) {
+        logger.error(`${req.method} ${req.originalUrl} failed:`, err);
         return res.status(500).json({
             message: "Internal server error",
-            error: err.message
         });
     }
 };

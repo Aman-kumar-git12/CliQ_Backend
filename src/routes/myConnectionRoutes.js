@@ -1,6 +1,6 @@
 const express = require("express");
 const myConnectionRouter = express.Router();
-const myConnectionController = require("../controllers/myConnectionController");
+const myConnectionController = require("../controllers/connections/myConnectionController");
 const { userAuth } = require("../middlewares/authMiddleware");
 
 myConnectionRouter.get("/myconnection", userAuth, myConnectionController.getMyConnections);

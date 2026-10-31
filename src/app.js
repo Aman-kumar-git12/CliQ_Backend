@@ -1,4 +1,6 @@
-require('dotenv').config();
+// Starts the CliQ API server: security middleware, CORS, routes, sockets and the status page.
+const { config, missingVariables } = require("./config");
+const logger = require("./utils/logger");
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
@@ -7,24 +9,23 @@ const morgan = require("morgan");
 const cookieParser = require("cookie-parser");
 const rateLimit = require("express-rate-limit");
 
-const routes = require("./routes/index");
-const { initialiseSocket } = require("./socket/socket");
-const redisClient = require("./config/redisClient");
-
-// 1. Environment Validation
-const requiredEnvVars = [
-    'DATABASE_URL', 'JWT_SECRET_KEY', 'FRONTEND_URL',
-    'CLOUD_NAME', 'CLOUD_KEY', 'CLOUD_SECRET',
-    'SMTP_HOST', 'SMTP_USER', 'SMTP_PASS'
-];
-const missingVars = requiredEnvVars.filter(v => !process.env[v]);
+// 1. Environment Validation: fail before loading anything that needs these
+const missingVars = missingVariables();
 if (missingVars.length > 0) {
-    console.error(`[CRITICAL] Missing required environment variables: ${missingVars.join(', ')}`);
+    logger.error(`[CRITICAL] Missing required environment variables: ${missingVars.join(", ")}`);
     process.exit(1);
 }
 
+const axios = require("axios"); // For self-pings
+const routes = require("./routes/index");
+const { initialiseSocket } = require("./socket/socket");
+const redisClient = require("./config/redisClient");
+const { notFound, errorHandler } = require("./middlewares/errorHandler");
+
 const app = express();
-const axios = require('axios'); // For self-pings
+
+// The port actually bound (it moves up when the configured one is busy)
+let activePort = config.port;
 
 // 0. Server Health & Heartbeat State
 const startTime = Date.now();
@@ -33,17 +34,19 @@ const MAX_HEARTBEATS = 10;
 
 // Internal Heartbeat Service (Self-Ping every 12 mins to avoid Render 15m sleep limit)
 const startHeartbeat = () => {
-    setInterval(async () => {
-        try {
-            const port = process.env.PORT || 2004;
-            await axios.get(`http://localhost:${port}/api/health`);
-            heartbeats.unshift(new Date().toISOString());
-            if (heartbeats.length > MAX_HEARTBEATS) heartbeats.pop();
-            console.log(`[HEARTBEAT] Self-ping successful at ${new Date().toLocaleTimeString()}`);
-        } catch (error) {
-            console.error(`[HEARTBEAT] Self-ping failed: ${error.message}`);
-        }
-    }, 12 * 60 * 1000); // 12 minutes
+    setInterval(
+        async () => {
+            try {
+                await axios.get(`http://localhost:${activePort}/api/health`);
+                heartbeats.unshift(new Date().toISOString());
+                if (heartbeats.length > MAX_HEARTBEATS) heartbeats.pop();
+                logger.info(`[HEARTBEAT] Self-ping successful at ${new Date().toLocaleTimeString()}`);
+            } catch (error) {
+                logger.error(`[HEARTBEAT] Self-ping failed: ${error.message}`);
+            }
+        },
+        12 * 60 * 1000,
+    ); // 12 minutes
 };
 
 // Start the heartbeat after a short delay
@@ -101,7 +104,7 @@ app.get("/", (req, res) => {
 
             <div class="heartbeat-list">
                 <div class="heartbeat-title">Recent Internal Heartbeats</div>
-                ${heartbeats.length > 0 ? heartbeats.map(h => `<div class="heartbeat-item">SUCCESS <span>${new Date(h).toLocaleTimeString()}</span></div>`).join('') : '<div style="opacity:0.3">Waiting for first heartbeat...</div>'}
+                ${heartbeats.length > 0 ? heartbeats.map((h) => `<div class="heartbeat-item">SUCCESS <span>${new Date(h).toLocaleTimeString()}</span></div>`).join("") : '<div style="opacity:0.3">Waiting for first heartbeat...</div>'}
             </div>
 
             <p style="margin-top: 32px; font-size: 10px; opacity: 0.3;">AUTO-REFRESH EVERY 30S | SELF-PING EVERY 12M</p>
@@ -119,55 +122,59 @@ initialiseSocket(server);
 
 // 2. Global Event Handlers (Graceful Exit)
 const handleExit = (signal) => {
-    console.log(`[PROCESS] Received ${signal}. Closing server...`);
+    logger.info(`[PROCESS] Received ${signal}. Closing server...`);
     server.close(() => {
-        console.log('[PROCESS] Server closed. Exiting process.');
+        logger.info("[PROCESS] Server closed. Exiting process.");
         process.exit(0);
     });
 };
-process.on('SIGINT', () => handleExit('SIGINT'));
-process.on('SIGTERM', () => handleExit('SIGTERM'));
-process.on('uncaughtException', (err) => {
-    console.error('[CRITICAL] Uncaught Exception:', err);
+process.on("SIGINT", () => handleExit("SIGINT"));
+process.on("SIGTERM", () => handleExit("SIGTERM"));
+process.on("uncaughtException", (err) => {
+    logger.error("[CRITICAL] Uncaught Exception:", err);
     // In production, log error and restart
     process.exit(1);
 });
-process.on('unhandledRejection', (reason) => {
-    console.error('[CRITICAL] Unhandled Rejection:', reason);
+process.on("unhandledRejection", (reason) => {
+    logger.error("[CRITICAL] Unhandled Rejection:", reason);
     process.exit(1);
 });
 
 // 3. Security & Logging Middleware
-app.use(helmet({
-    contentSecurityPolicy: false, // Managed manually below for dynamic backendPort
-}));
-app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev')); // HTTP request logging
+app.use(
+    helmet({
+        contentSecurityPolicy: false, // Managed manually below for dynamic backendPort
+    }),
+);
+app.use(morgan(config.isProduction ? "combined" : "dev")); // HTTP request logging
 
 // 4. Rate Limiting
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 1000, // Limit each IP to 1000 requests per window
-    message: "Too many requests from this IP, please try again later."
+    message: "Too many requests from this IP, please try again later.",
 });
 app.use("/api/", limiter); // Apply to all API routes
 
 // 5. CORS Configuration
-const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:5173,http://127.0.0.1:5173").split(",").map(o => o.trim());
-app.use(cors({
-    origin: (origin, cb) => {
-        if (!origin || allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
-            return cb(null, true);
-        }
-        // Dynamically allow any local development port
-        if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
-            return cb(null, true);
-        }
-        console.warn(`[CORS] Rejected origin: ${origin}`);
-        return cb(null, false);
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
-}));
+const allowedOrigins = config.frontendOrigins;
+app.use(
+    cors({
+        origin: (origin, cb) => {
+            if (!origin || allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
+                return cb(null, true);
+            }
+            // Dynamically allow any local development port
+            if (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:")) {
+                return cb(null, true);
+            }
+            logger.warn(`[CORS] Rejected origin: ${origin}`);
+            return cb(null, false);
+        },
+        credentials: true,
+        methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    }),
+);
 
 app.use(cookieParser());
 app.use(express.json({ limit: "20mb" }));
@@ -175,14 +182,15 @@ app.use(express.urlencoded({ limit: "20mb", extended: true }));
 
 // 6. Dynamic Content Security Policy (CSP)
 app.use((req, res, next) => {
-    const backendPort = process.env.PORT || 2004;
+    const backendPort = activePort;
     // Build connect-src dynamically from allowedOrigins
     const originsStr = allowedOrigins.join(" ");
     const connectSrc = `connect-src 'self' ${originsStr} http://localhost:${backendPort} http://localhost:8000 https://accounts.google.com https://openidconnect.googleapis.com/v1/userinfo;`;
 
     // Set CSP (helmet sets defaults, we override specific ones)
-    res.setHeader("Content-Security-Policy",
-        `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://lh3.googleusercontent.com https://res.cloudinary.com; ${connectSrc}`
+    res.setHeader(
+        "Content-Security-Policy",
+        `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://lh3.googleusercontent.com https://res.cloudinary.com; ${connectSrc}`,
     );
     next();
 });
@@ -190,25 +198,26 @@ app.use((req, res, next) => {
 // 7. The AI agent is reached only through authenticated routes (e.g. POST /aichat/stream).
 // There is deliberately no open /api/agent proxy: it let anyone spend the LLM quota and write chat history.
 
-// 8. Routes
+// 8. Routes, then JSON 404s and the central error handler (both must come last)
 app.use("/", routes);
+app.use(notFound);
+app.use(errorHandler);
 
 // 9. Server Startup with Port Retry
-const basePort = Number(process.env.PORT) || 2004;
-const maxRetries = Number(process.env.PORT_RETRY_COUNT) || 10;
-let activePort = basePort;
+const basePort = config.port;
+const maxRetries = config.portRetryCount;
 
 const startServer = (port) => {
     activePort = port;
-    server.listen(port, () => console.log(`[SERVER] Started on port ${port}`));
+    server.listen(port, () => logger.info(`[SERVER] Started on port ${port}`));
 };
 
 server.on("error", (err) => {
     if (err.code === "EADDRINUSE" && activePort < basePort + maxRetries) {
-        console.warn(`[SERVER] Port ${activePort} in use, retrying on ${activePort + 1}...`);
+        logger.warn(`[SERVER] Port ${activePort} in use, retrying on ${activePort + 1}...`);
         setTimeout(() => startServer(activePort + 1), 150);
     } else {
-        console.error("[SERVER] Failed to start:", err);
+        logger.error("[SERVER] Failed to start:", err);
         process.exit(1);
     }
 });

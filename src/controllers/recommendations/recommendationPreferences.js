@@ -1,10 +1,11 @@
 const { prisma } = require("../../../prisma/prismaClient");
+const logger = require("../../utils/logger");
 const {
     normalizeText,
     normalizeTerms,
     getRecommendationMetadata,
-    invalidateRecommendationCache
-} = require("../../utils/recommendationUtils");
+    invalidateRecommendationCache,
+} = require("../../utils/recommendations");
 
 const toggleUserInterest = async (req, res) => {
     try {
@@ -19,7 +20,7 @@ const toggleUserInterest = async (req, res) => {
             where: {
                 userId: loggedInUserId,
                 candidateUserId,
-            }
+            },
         });
 
         if (existing?.status === "preferred") {
@@ -35,7 +36,7 @@ const toggleUserInterest = async (req, res) => {
         await prisma.recommendationPreference.upsert({
             where: { userId_candidateUserId: { userId: loggedInUserId, candidateUserId } },
             update: { status: "preferred", metadata },
-            create: { userId: loggedInUserId, candidateUserId, status: "preferred", metadata }
+            create: { userId: loggedInUserId, candidateUserId, status: "preferred", metadata },
         });
 
         await invalidateRecommendationCache(loggedInUserId);
@@ -47,7 +48,8 @@ const toggleUserInterest = async (req, res) => {
             message: "Marked as preferred",
         });
     } catch (error) {
-        res.status(500).json({ message: "Failed to toggle interest", error: error.message });
+        logger.error(`${req.method} ${req.originalUrl} failed:`, error);
+        res.status(500).json({ message: "Failed to toggle interest" });
     }
 };
 
@@ -61,7 +63,7 @@ const toggleUserNotInterest = async (req, res) => {
         });
 
         const existing = await prisma.recommendationPreference.findFirst({
-            where: { userId: loggedInUserId, candidateUserId }
+            where: { userId: loggedInUserId, candidateUserId },
         });
 
         if (existing?.status === "not_preferred") {
@@ -77,7 +79,7 @@ const toggleUserNotInterest = async (req, res) => {
         await prisma.recommendationPreference.upsert({
             where: { userId_candidateUserId: { userId: loggedInUserId, candidateUserId } },
             update: { status: "not_preferred", metadata },
-            create: { userId: loggedInUserId, candidateUserId, status: "not_preferred", metadata }
+            create: { userId: loggedInUserId, candidateUserId, status: "not_preferred", metadata },
         });
 
         await invalidateRecommendationCache(loggedInUserId, candidateUserId);
@@ -90,7 +92,8 @@ const toggleUserNotInterest = async (req, res) => {
             message: "Marked as not preferred",
         });
     } catch (error) {
-        res.status(500).json({ message: "Failed to toggle not-interest", error: error.message });
+        logger.error(`${req.method} ${req.originalUrl} failed:`, error);
+        res.status(500).json({ message: "Failed to toggle not-interest" });
     }
 };
 

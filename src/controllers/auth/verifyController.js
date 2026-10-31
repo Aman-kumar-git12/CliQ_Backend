@@ -1,14 +1,15 @@
 const { prisma } = require("../../../prisma/prismaClient");
-const { toSafeUser } = require("../../utils/authUtils");
-const { hashVerificationToken, hashOTP } = require("../../utils/emailVerificationUtils");
-const { primeRecommendationFeedForUser } = require("../recommendationActionController");
+const { toSafeUser } = require("../../utils/auth/authUtils");
+const { hashVerificationToken, hashOTP } = require("../../utils/auth/emailVerificationUtils");
+const { primeRecommendationFeedForUser } = require("../recommendations");
+const logger = require("../../utils/logger");
 const {
     normalizeEmail,
     createAuthToken,
     setAuthCookie,
     sendFreshOTP,
     MAX_VERIFICATION_RESENDS,
-    VERIFICATION_RESEND_COOLDOWN_MS
+    VERIFICATION_RESEND_COOLDOWN_MS,
 } = require("./authHelpers");
 
 const verifyEmail = async (req, res) => {
@@ -57,9 +58,9 @@ const verifyEmail = async (req, res) => {
             user: toSafeUser(user),
         });
     } catch (err) {
+        logger.error(`${req.method} ${req.originalUrl} failed:`, err);
         return res.status(500).json({
             message: "Internal server error",
-            error: err.message,
         });
     }
 };
@@ -88,7 +89,9 @@ const resendVerificationEmail = async (req, res) => {
         }
 
         if (user.authProvider === "google") {
-            return res.status(400).json({ message: "This account uses Google sign-in and does not require email verification." });
+            return res
+                .status(400)
+                .json({ message: "This account uses Google sign-in and does not require email verification." });
         }
 
         if (user.emailVerified) {
@@ -115,9 +118,10 @@ const resendVerificationEmail = async (req, res) => {
             if (remainingMs > 0) {
                 const remainingSeconds = Math.ceil(remainingMs / 1000);
                 const remainingMinutes = Math.ceil(remainingMs / (60 * 1000));
-                const display = remainingSeconds < 60
-                    ? `${remainingSeconds} second${remainingSeconds === 1 ? "" : "s"}`
-                    : `${remainingMinutes} minute${remainingMinutes === 1 ? "" : "s"}`;
+                const display =
+                    remainingSeconds < 60
+                        ? `${remainingSeconds} second${remainingSeconds === 1 ? "" : "s"}`
+                        : `${remainingMinutes} minute${remainingMinutes === 1 ? "" : "s"}`;
                 return res.status(429).json({
                     message: `Please wait ${display} before requesting a new code.`,
                     remainingMs,
@@ -129,9 +133,9 @@ const resendVerificationEmail = async (req, res) => {
 
         return res.json({ message: "A new verification code has been sent to your email." });
     } catch (err) {
+        logger.error(`${req.method} ${req.originalUrl} failed:`, err);
         return res.status(500).json({
             message: "Internal server error",
-            error: err.message,
         });
     }
 };
@@ -198,9 +202,9 @@ const verifyOTP = async (req, res) => {
             user: toSafeUser(updatedUser),
         });
     } catch (err) {
+        logger.error(`${req.method} ${req.originalUrl} failed:`, err);
         return res.status(500).json({
             message: "Internal server error",
-            error: err.message,
         });
     }
 };

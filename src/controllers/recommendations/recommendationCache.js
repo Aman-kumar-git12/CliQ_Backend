@@ -1,20 +1,22 @@
 const axios = require("axios");
+const { config } = require("../../config");
 const {
     invalidateRecommendationCache,
     refreshRecommendationCacheInBackground,
-} = require("../../utils/recommendationUtils");
+} = require("../../utils/recommendations");
+const logger = require("../../utils/logger");
 
 const clearRecommendationCacheForUser = async (userId) => {
     if (!userId) return;
     try {
         await invalidateRecommendationCache(userId);
     } catch (error) {
-        console.error("Failed to clear recommendation cache:", error.message);
+        logger.error("Failed to clear recommendation cache:", error.message);
     }
 };
 
 const precomputeProfileEmbedding = (userId, expertise) => {
-    const agentUrl = process.env.LLM_SERVICE_URL || "http://localhost:8000";
+    const agentUrl = config.agent.url;
 
     Promise.resolve()
         .then(() =>
@@ -24,11 +26,11 @@ const precomputeProfileEmbedding = (userId, expertise) => {
                     profileId: userId,
                     profile: expertise || {},
                 },
-                { timeout: 2000 }
-            )
+                { timeout: 2000 },
+            ),
         )
         .catch((error) => {
-            console.error("Profile embedding precompute failed:", error.message);
+            logger.error("Profile embedding precompute failed:", error.message);
         });
 };
 
@@ -41,7 +43,7 @@ const primeRecommendationFeedForUser = (userId, expertise) => {
             refreshRecommendationCacheInBackground({ userId });
         })
         .catch((error) => {
-            console.error("Recommendation feed prewarm failed:", error.message);
+            logger.error("Recommendation feed prewarm failed:", error.message);
         });
 };
 

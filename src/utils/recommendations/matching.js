@@ -1,7 +1,11 @@
-const fs = require("fs");
 const axios = require("axios");
-const { LOG_FILE, AI_MATCH_TIMEOUT_MS, SMART_RECOMMENDATION_BATCH_SIZE, SMART_RECOMMENDATION_RESPONSE_SIZE } = require("./constants");
+const {
+    AI_MATCH_TIMEOUT_MS,
+    SMART_RECOMMENDATION_BATCH_SIZE,
+    SMART_RECOMMENDATION_RESPONSE_SIZE,
+} = require("./constants");
 const { prisma } = require("../../../prisma/prismaClient");
+const { config } = require("../../config");
 const {
     getPersistentExcludedIds,
     getEligibleRecommendationCandidates,
@@ -14,7 +18,12 @@ const { buildHistoryProfile, buildCompositeMatchingProfile } = require("./histor
 const { buildFeedbackProfile } = require("./feedback");
 const { buildFallbackRankings } = require("./scoring");
 const { buildRankedRecommendationBatch } = require("./ranking");
-const { setCachedRecommendationBatch, getRecommendationCachePayload, SMART_RECOMMENDATION_CACHE_TTL_SECONDS } = require("./caching");
+const {
+    setCachedRecommendationBatch,
+    getRecommendationCachePayload,
+    SMART_RECOMMENDATION_CACHE_TTL_SECONDS,
+} = require("./caching");
+const logger = require("../logger");
 
 const getMatchingAgentPayload = (userExpertise = {}, historyProfile = null, candidates = []) => ({
     userProfile: userExpertise,
@@ -31,13 +40,8 @@ const getMatchingAgentPayload = (userExpertise = {}, historyProfile = null, cand
     })),
 });
 
-const rankCandidatesWithAgent = async ({
-    userExpertise,
-    historyProfile,
-    candidates,
-    fallbackRankings,
-}) => {
-    const llmServiceUrl = process.env.LLM_SERVICE_URL || "http://localhost:8000";
+const rankCandidatesWithAgent = async ({ userExpertise, historyProfile, candidates, fallbackRankings }) => {
+    const llmServiceUrl = config.agent.url;
     let rankedResults = Array.isArray(fallbackRankings) ? fallbackRankings : [];
     let strategy = "fallback";
 
@@ -45,7 +49,7 @@ const rankCandidatesWithAgent = async ({
         const agentResponse = await axios.post(
             `${llmServiceUrl}/api/match/match`,
             getMatchingAgentPayload(userExpertise || {}, historyProfile, candidates),
-            { timeout: AI_MATCH_TIMEOUT_MS }
+            { timeout: AI_MATCH_TIMEOUT_MS },
         );
 
         if (Array.isArray(agentResponse.data?.rankedResults) && agentResponse.data.rankedResults.length > 0) {
@@ -53,7 +57,7 @@ const rankCandidatesWithAgent = async ({
             strategy = "ai";
         }
     } catch (agentError) {
-        console.error("AI Smart Matching failed:", agentError.message);
+        logger.error("AI Smart Matching failed:", agentError.message);
     }
 
     return { rankedResults, strategy };
@@ -65,14 +69,12 @@ const refreshRecommendationCacheInBackground = ({ userId }) => {
     Promise.resolve()
         .then(() => warmRecommendationCacheForUser(userId))
         .catch((error) => {
-            console.error("Recommendation background refresh failed:", error.message);
+            logger.error("Recommendation background refresh failed:", error.message);
         });
 };
 
 const prepareSmartRecommendationContext = async (loggedInUserId) => {
-  if (fs.existsSync(LOG_FILE)) {
-    fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] Context: Fetching user ${loggedInUserId}...\n`);
-  }
+    logger.debug(`[SmartUsers] Context: Fetching user ${loggedInUserId}...`);
     const user = await prisma.users.findUnique({
         where: { id: loggedInUserId },
         select: { id: true, expertise: true },
@@ -120,19 +122,19 @@ const warmRecommendationCacheForUser = async (loggedInUserId) => {
     if (!loggedInUserId) return null;
 
     try {
-        console.log(`[Warmup] Starting for user ${loggedInUserId}`);
+        logger.info(`[Warmup] Starting for user ${loggedInUserId}`);
         const context = await prepareSmartRecommendationContext(loggedInUserId);
         if (!context?.user) {
             return null;
         }
 
         if (context.eligibleCandidates.length === 0) {
-            console.log(`[Warmup] No eligible candidates for ${loggedInUserId}`);
+            logger.info(`[Warmup] No eligible candidates for ${loggedInUserId}`);
             const emptyPayload = getRecommendationCachePayload([], "empty");
             await setCachedRecommendationBatch(
                 loggedInUserId,
                 emptyPayload,
-                Math.max(30, Math.floor(SMART_RECOMMENDATION_CACHE_TTL_SECONDS / 3))
+                Math.max(30, Math.floor(SMART_RECOMMENDATION_CACHE_TTL_SECONDS / 3)),
             );
             return emptyPayload;
         }
@@ -157,7 +159,7 @@ const warmRecommendationCacheForUser = async (loggedInUserId) => {
         await setCachedRecommendationBatch(loggedInUserId, payload);
         return payload;
     } catch (error) {
-        console.error(`[Warmup] Failed for ${loggedInUserId}:`, error.message);
+        logger.error(`[Warmup] Failed for ${loggedInUserId}:`, error.message);
         return null;
     }
 };

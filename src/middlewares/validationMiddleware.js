@@ -1,27 +1,21 @@
-const Validator = require('validator');
+const Validator = require("validator");
 
 const validateSignupData = (req, res, next) => {
     try {
         const { firstname, lastname, email, password, age } = req.body;
         if (!firstname || !lastname) {
             throw new Error("Firstname and Lastname are required");
-        }
-        else if (!email) {
+        } else if (!email) {
             throw new Error("Email is required");
-        }
-        else if (!Validator.isEmail(email)) {
+        } else if (!Validator.isEmail(email)) {
             throw new Error("Invalid email format");
-        }
-        else if (!password) {
+        } else if (!password) {
             throw new Error("Password is required");
-        }
-        else if (!Validator.isStrongPassword(password)) {
+        } else if (!Validator.isStrongPassword(password)) {
             throw new Error("Password should be strong");
-        }
-        else if (!age) {
+        } else if (!age) {
             throw new Error("Age is required");
-        }
-        else if (age < 13) {
+        } else if (age < 13) {
             throw new Error("Age must be at least 13 years");
         }
         next();
@@ -51,7 +45,7 @@ const validateRequest = (req, res, next) => {
 const validateReview = (req, res, next) => {
     try {
         const { status } = req.params;
-        const allowedStatus = ['accepted', 'rejected'];
+        const allowedStatus = ["accepted", "rejected"];
         if (!allowedStatus.includes(status)) {
             throw new Error("Invalid status value");
         }
@@ -96,17 +90,8 @@ const validatePostUpdate = (req, res, next) => {
 
 const validateProfileEdit = (req, res, next) => {
     try {
-        const allowedEditsFields = [
-            "firstname",
-            "lastname",
-            "email",
-            "age",
-            "password",
-            "imageUrl"
-        ];
-        const isEditAllowed = Object.keys(req.body).every((field) =>
-            allowedEditsFields.includes(field)
-        );
+        const allowedEditsFields = ["firstname", "lastname", "email", "age", "password", "imageUrl"];
+        const isEditAllowed = Object.keys(req.body).every((field) => allowedEditsFields.includes(field));
         if (!isEditAllowed) {
             throw new Error("Invalid edit fields");
         }
@@ -116,11 +101,23 @@ const validateProfileEdit = (req, res, next) => {
     }
 };
 
+const OBJECT_ID_REGEX = /^[0-9a-fA-F]{24}$/;
+
+// For router.param(): a malformed MongoDB id in the URL gets a 400 instead of a Prisma error.
+// "postId" is reported as "Invalid post ID format".
+const validateObjectIdParam = (req, res, next, value, name) => {
+    if (!OBJECT_ID_REGEX.test(value)) {
+        return res.status(400).json({ message: `Invalid ${name.replace(/Id$/, " ID")} format` });
+    }
+    next();
+};
+
 module.exports = {
+    validateObjectIdParam,
     validateSignupData,
     validateRequest,
     validateReview,
     validatePost,
     validatePostUpdate,
-    validateProfileEdit
+    validateProfileEdit,
 };

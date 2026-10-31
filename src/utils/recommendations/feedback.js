@@ -1,12 +1,7 @@
 const { RECOMMENDATION_CONFIG } = require("./constants");
 const { normalizeText, normalizeTerms } = require("./coreUtils");
 const { buildProfileSignals } = require("./profileSignals");
-const {
-    getClusterKey,
-    detectProfileType,
-    detectExperienceLevel,
-    detectLocationBucket,
-} = require("./classification");
+const { getClusterKey, detectProfileType, detectExperienceLevel, detectLocationBucket } = require("./classification");
 
 const createWeightedMap = () => new Map();
 
@@ -66,7 +61,11 @@ const buildFeedbackProfile = (events = [], candidateMap = new Map()) => {
         addWeightedTerms(feedback.tokens, [...signals.tokens, ...feedbackReasonTerms], weight * 0.12);
         addWeightedTerms(feedback.clusters, [getClusterKey(signals)], weight * 0.32);
         addWeightedTerms(feedback.profileTypes, [detectProfileType(signals)], weight * 0.2);
-        addWeightedTerms(feedback.experienceLevels, [detectExperienceLevel(candidate.expertise || {}, signals)], weight * 0.16);
+        addWeightedTerms(
+            feedback.experienceLevels,
+            [detectExperienceLevel(candidate.expertise || {}, signals)],
+            weight * 0.16,
+        );
         addWeightedTerms(feedback.locations, [detectLocationBucket(candidate.expertise || {}, signals)], weight * 0.12);
         feedback.totalSignals += 1;
     });
@@ -77,11 +76,7 @@ const buildFeedbackProfile = (events = [], candidateMap = new Map()) => {
 const getTopWeightedTerms = (map, direction = "positive", limit = 6) =>
     [...map.entries()]
         .filter(([, weight]) => (direction === "positive" ? weight > 0 : weight < 0))
-        .sort((left, right) =>
-            direction === "positive"
-                ? right[1] - left[1]
-                : left[1] - right[1]
-        )
+        .sort((left, right) => (direction === "positive" ? right[1] - left[1] : left[1] - right[1]))
         .slice(0, limit)
         .map(([term]) => term);
 

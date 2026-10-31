@@ -1,5 +1,7 @@
 const jwt = require("jsonwebtoken");
 const { prisma } = require("../../prisma/prismaClient");
+const { config } = require("../config");
+const { withoutSecrets } = require("../utils/auth/authUtils");
 
 const buildAuthError = (message, status = 401) => {
     const error = new Error(message);
@@ -13,24 +15,24 @@ const getAuthenticatedUser = async (req) => {
         throw buildAuthError("You are Unauthorized, Please Login...", 401);
     }
 
-    const decodedObj = jwt.verify(token, process.env.JWT_SECRET_KEY);
+    const decodedObj = jwt.verify(token, config.jwtSecret);
     const { userId } = decodedObj;
 
     const user = await prisma.users.findUnique({
-        where: { id: userId }
+        where: { id: userId },
     });
 
     if (!user) {
         throw buildAuthError("User not found", 401);
     }
 
-    return user;
+    // req.user often ends up in responses, so it never carries the password hash
+    return withoutSecrets(user);
 };
 
 const handleAuthError = (res, err) => {
     res.status(err.status || 401).json({
         message: err.message || "Authentication Error",
-        error: err.message,
     });
 };
 
@@ -65,17 +67,19 @@ const requireActiveUser = (req, res, next) => {
     return next();
 };
 
-const requireRole = (...roles) => (req, res, next) => {
-    if (!req.user) {
-        return handleAuthError(res, buildAuthError("Authentication required", 401));
-    }
+const requireRole =
+    (...roles) =>
+    (req, res, next) => {
+        if (!req.user) {
+            return handleAuthError(res, buildAuthError("Authentication required", 401));
+        }
 
-    if (!roles.includes(req.user.role)) {
-        return handleAuthError(res, buildAuthError("You are not authorized to access this resource.", 403));
-    }
+        if (!roles.includes(req.user.role)) {
+            return handleAuthError(res, buildAuthError("You are not authorized to access this resource.", 403));
+        }
 
-    return next();
-};
+        return next();
+    };
 
 const userAuth = async (req, res, next) => {
     try {

@@ -14,5 +14,5 @@ module.exports = {
     verifyOTP,
     forgotPassword,
     resetPassword,
-    createUnblockRequest
+    createUnblockRequest,
 };
