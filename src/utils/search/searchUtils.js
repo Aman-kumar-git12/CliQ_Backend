@@ -243,7 +243,7 @@ const runSemanticPeopleSearch = async (text, currentUserId, limit) => {
         const response = await axios.post(
             `${agentUrl}/api/match/search`,
             { query: text, candidates, topK: limit },
-            { timeout: SEMANTIC_SEARCH_TIMEOUT_MS },
+            { timeout: SEMANTIC_SEARCH_TIMEOUT_MS, headers: config.agent.authHeaders },
         );
         return Array.isArray(response.data?.results) ? response.data.results : [];
     } catch (err) {

@@ -2,6 +2,9 @@ const express = require("express");
 const searchRouter = express.Router();
 const searchController = require("../controllers/search/searchController");
 const { userAuth } = require("../middlewares/authMiddleware");
+const { validateObjectIdParam } = require("../middlewares/validationMiddleware");
+
+for (const name of ["id"]) searchRouter.param(name, validateObjectIdParam);
 
 searchRouter.get("/search", userAuth, searchController.globalSearch);
 searchRouter.get("/user/mention-suggestions", userAuth, searchController.getMentionSuggestions);

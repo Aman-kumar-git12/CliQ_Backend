@@ -26,7 +26,10 @@ let kbVersionMemo = { value: null, fetchedAt: 0 };
 const getKbVersion = async () => {
     if (kbVersionMemo.value && Date.now() - kbVersionMemo.fetchedAt < KB_VERSION_TTL_MS) return kbVersionMemo.value;
     try {
-        const response = await fetch(`${llmServiceUrl}/api/chat/kb-version`, { signal: AbortSignal.timeout(3000) });
+        const response = await fetch(`${llmServiceUrl}/api/chat/kb-version`, {
+            headers: config.agent.authHeaders,
+            signal: AbortSignal.timeout(3000),
+        });
         const { kbVersion } = response.ok ? await response.json() : {};
         if (kbVersion) kbVersionMemo = { value: String(kbVersion), fetchedAt: Date.now() };
         return kbVersion ? String(kbVersion) : null;
@@ -125,7 +128,7 @@ const writeCache = async (key, value) => {
 const appendAgentHistory = (sessionId, question, answer) =>
     fetch(`${llmServiceUrl}/api/chat/history/append`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...config.agent.authHeaders },
         body: JSON.stringify({ sessionId, question, answer }),
     }).catch((error) => logger.error("Agent history append failed:", error.message));
 
@@ -227,7 +230,7 @@ const streamChat = async (req, res) => {
             const userContext = await buildUserContext(req.user);
             const response = await fetch(`${llmServiceUrl}/api/chat/stream`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", ...config.agent.authHeaders },
                 body: JSON.stringify({ message, sessionId, currentPath, userContext, regenerate }),
                 signal: upstream.signal,
             });
@@ -309,20 +312,13 @@ const streamChat = async (req, res) => {
 
 // ---------- feedback learning ----------
 
-let missingKeyLogged = false;
-
 // Sends a 👍/👎 to the agent so it can reuse approved answers and avoid rejected ones
 const forwardFeedback = (message, feedback, userId) => {
     const meta = message.meta || {};
     if (!meta.question || meta.error) return; // nothing to learn from failed or legacy answers
-    if (!config.agent.internalKey) {
-        if (!missingKeyLogged) logger.warn("AGENT_INTERNAL_KEY is not set; AI feedback learning is disabled.");
-        missingKeyLogged = true;
-        return;
-    }
     fetch(`${llmServiceUrl}/api/chat/feedback`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Internal-Key": config.agent.internalKey },
+        headers: { "Content-Type": "application/json", ...config.agent.authHeaders },
         body: JSON.stringify({
             messageId: message.id,
             // One vote per user is counted, but the agent never sees the real user id

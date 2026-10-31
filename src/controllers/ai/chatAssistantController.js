@@ -159,6 +159,7 @@ const postToAssistantService = async (path, payload, { timeout, responseType } =
         try {
             return await axios.post(`${llmServiceUrl}${path}`, payload, {
                 timeout,
+                headers: config.agent.authHeaders,
                 ...(responseType ? { responseType } : {}),
             });
         } catch (error) {

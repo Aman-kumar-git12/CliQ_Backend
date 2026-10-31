@@ -5,7 +5,7 @@ const postFeedController = require("../controllers/posts/postFeedController");
 const postInteractionController = require("../controllers/posts/postInteractionController");
 const { userAuth } = require("../middlewares/authMiddleware");
 const { validateObjectIdParam, validatePost, validatePostUpdate } = require("../middlewares/validationMiddleware");
-const upload = require("../upload/upload");
+const { postUpload } = require("../upload/upload");
 
 for (const name of ["userId", "postId", "commentId"]) postRouter.param(name, validateObjectIdParam);
 
@@ -16,7 +16,7 @@ postRouter.get("/user/post/:postId", userAuth, postCrudController.getPostById);
 postRouter.post(
     "/create/post",
     userAuth,
-    upload.fields([
+    postUpload.fields([
         { name: "image", maxCount: 1 },
         { name: "video", maxCount: 1 },
     ]),

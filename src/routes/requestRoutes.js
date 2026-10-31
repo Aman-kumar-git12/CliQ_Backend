@@ -5,12 +5,14 @@ const recommendationFeedController = require("../controllers/recommendations/rec
 const recommendationActionController = require("../controllers/recommendations");
 const recommendationAnalyticsController = require("../controllers/recommendations/recommendationAnalyticsController");
 const recommendationPreferenceController = require("../controllers/recommendations/recommendationPreferenceController");
-const { userAuth } = require("../middlewares/authMiddleware");
-const { validateRequest, validateReview } = require("../middlewares/validationMiddleware");
+const { userAuth, adminAuth } = require("../middlewares/authMiddleware");
+const { validateObjectIdParam, validateRequest, validateReview } = require("../middlewares/validationMiddleware");
+
+for (const name of ["userId", "requestId", "candidateUserId", "toUserId"])
+    requestRouter.param(name, validateObjectIdParam);
 
 requestRouter.get("/user/connections/:userId", userAuth, connectionController.getConnectionStatus);
 requestRouter.delete("/request/connections/delete/:requestId", userAuth, connectionController.deleteRequest);
-requestRouter.get("/request/user", userAuth, recommendationFeedController.getRandomUser);
 requestRouter.get("/request/smart-users", userAuth, recommendationFeedController.getSmartUsers);
 
 // Analytics
@@ -21,7 +23,7 @@ requestRouter.get(
 );
 requestRouter.get(
     "/request/smart-users/admin-analytics",
-    userAuth,
+    adminAuth,
     recommendationAnalyticsController.getRecommendationAdminAnalytics,
 );
 

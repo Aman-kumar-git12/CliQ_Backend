@@ -13,6 +13,7 @@ const REQUIRED = [
     "CLOUD_SECRET",
     "SMTP_USER",
     "SMTP_PASS",
+    "AGENT_INTERNAL_KEY",
 ];
 
 const missingVariables = () => REQUIRED.filter((name) => !env[name]);
@@ -71,10 +72,10 @@ const config = {
         fromEmail: env.SMTP_FROM || env.SMTP_USER,
     },
 
-    // The Python AI agent (WebsiteAgent)
+    // The Python AI agent (WebsiteAgent); it refuses any call without the shared key
     agent: {
         url: env.LLM_SERVICE_URL || "http://localhost:8000",
-        internalKey: env.AGENT_INTERNAL_KEY || "",
+        authHeaders: { "X-Internal-Key": env.AGENT_INTERNAL_KEY || "" },
     },
 
     search: {

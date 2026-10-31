@@ -1,8 +1,9 @@
 const { prisma } = require("../../../prisma/prismaClient");
 const bcrypt = require("bcrypt");
-const cloudinary = require("../../upload/cloudinary");
+const { uploadBuffer } = require("../../upload/cloudinary");
 const { toSafeUser } = require("../../utils/auth/authUtils");
 const { config } = require("../../config");
+const { createAuthToken, setAuthCookie } = require("../auth/authHelpers");
 
 const getProfile = async (req, res) => {
     const user = req.user;
@@ -61,12 +62,15 @@ const editProfile = async (req, res) => {
     if (req.body.password) {
         const hashedPassword = await bcrypt.hash(req.body.password, 10);
         updateData.password = hashedPassword;
+        // Ends every other session; this browser gets a fresh cookie below
+        updateData.tokenVersion = { increment: 1 };
     }
 
     const data = await prisma.users.update({
         where: { id: loggedInUser.id },
         data: updateData,
     });
+    if (req.body.password) setAuthCookie(res, createAuthToken(data));
     res.json({ message: "Profile updated successfully", user: toSafeUser(data) });
 };
 
@@ -99,15 +103,7 @@ const updateProfileImage = async (req, res) => {
         return res.status(400).json({ message: "No image file uploaded" });
     }
 
-    const uploadPromise = new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream({ folder: "profile_images" }, (error, result) => {
-            if (error) reject(error);
-            else resolve(result);
-        });
-        stream.end(req.file.buffer);
-    });
-
-    const uploadedImage = await uploadPromise;
+    const uploadedImage = await uploadBuffer(req.file, { folder: "profile_images" });
 
     const user = await prisma.users.update({
         where: { id: req.user.id },

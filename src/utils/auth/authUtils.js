@@ -29,6 +29,9 @@ const publicUserSelect = {
 // used to harvest addresses. Single-profile views still use publicUserSelect.
 const { email: _email, ...listUserSelect } = publicUserSelect;
 
+// Tokens issued before tokenVersion existed have no "tv" and count as version 0
+const isTokenCurrent = (decodedToken, user) => (decodedToken.tv ?? 0) === (user.tokenVersion ?? 0);
+
 // Fields that must never leave the server, even inside a full user record
 const SECRET_USER_FIELDS = ["password", "tokenVersion", "googleId", "blockedReason"];
 
@@ -89,4 +92,5 @@ module.exports = {
     toPublicUser,
     toListUser,
     withoutSecrets,
+    isTokenCurrent,
 };

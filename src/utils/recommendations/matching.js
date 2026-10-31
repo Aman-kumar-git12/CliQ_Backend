@@ -49,7 +49,7 @@ const rankCandidatesWithAgent = async ({ userExpertise, historyProfile, candidat
         const agentResponse = await axios.post(
             `${llmServiceUrl}/api/match/match`,
             getMatchingAgentPayload(userExpertise || {}, historyProfile, candidates),
-            { timeout: AI_MATCH_TIMEOUT_MS },
+            { timeout: AI_MATCH_TIMEOUT_MS, headers: config.agent.authHeaders },
         );
 
         if (Array.isArray(agentResponse.data?.rankedResults) && agentResponse.data.rankedResults.length > 0) {

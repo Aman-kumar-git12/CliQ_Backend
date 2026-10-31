@@ -1,10 +1,10 @@
 const axios = require("axios");
 const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
 const { prisma } = require("../../../prisma/prismaClient");
 const { primeRecommendationFeedForUser } = require("../recommendations");
 const { config } = require("../../config");
 const logger = require("../../utils/logger");
+const { createAuthToken } = require("./authHelpers");
 
 const GOOGLE_URLS = {
     auth: "https://accounts.google.com/o/oauth2/v2/auth",
@@ -38,7 +38,7 @@ const getFrontendUrl = (state) => {
 };
 
 const issueToken = (res, user) => {
-    const token = jwt.sign({ userId: user.id, email: user.email }, config.jwtSecret, { expiresIn: "30d" });
+    const token = createAuthToken(user);
     res.cookie("auth_token", token, {
         httpOnly: true,
         secure: config.isProduction,

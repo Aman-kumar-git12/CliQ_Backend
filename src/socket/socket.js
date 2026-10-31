@@ -4,6 +4,7 @@ const { prisma } = require("../../prisma/prismaClient");
 const redisClient = require("../config/redisClient");
 const { config } = require("../config");
 const logger = require("../utils/logger");
+const { isTokenCurrent } = require("../utils/auth/authUtils");
 
 let io;
 
@@ -45,11 +46,12 @@ const authenticateSocket = async (socket) => {
             firstname: true,
             lastname: true,
             isBlocked: true,
+            tokenVersion: true,
         },
     });
 
-    if (!user) {
-        throw new Error("User not found");
+    if (!user || !isTokenCurrent(decoded, user)) {
+        throw new Error("Session ended");
     }
 
     if (user.isBlocked) {
@@ -150,7 +152,7 @@ const initialiseSocket = (server) => {
                 }
 
                 const roomId = [currentUserId, targetuserId].sort().join("_");
-                logger.info(`sendMessage: ${currentUser.firstname} to room ${roomId}: ${newMessage || "[attachment]"}`);
+                logger.debug(`sendMessage: ${currentUser.firstname} to room ${roomId}`); // never log message text: it is private
 
                 try {
                     const targetUser = await prisma.users.findUnique({

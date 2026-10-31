@@ -1,5 +1,5 @@
 const { prisma } = require("../../../prisma/prismaClient");
-const cloudinary = require("../../upload/cloudinary");
+const { uploadBuffer } = require("../../upload/cloudinary");
 const { buildPostInclude, formatPost, formatPosts } = require("../../utils/posts/postPresenter");
 const { isObjectId, resolveMentionIds, parseIdList, extractFirstUrl } = require("../../utils/posts/contentUtils");
 const { getLinkPreview } = require("../../utils/posts/linkPreviewUtils");
@@ -53,23 +53,19 @@ const getPostById = async (req, res) => {
     res.json(await formatPost(post));
 };
 
-const uploadToCloudinary = (fileBuffer, folder, resourceType = "auto") =>
-    new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream({ folder, resource_type: resourceType }, (error, result) =>
-            error ? reject(error) : resolve(result),
-        );
-        stream.end(fileBuffer);
-    });
-
 const createPost = async (req, res) => {
     const content = typeof req.body.content === "string" ? req.body.content.trim() : "";
     const postData = { content, userId: req.user.id };
 
     if (req.files?.image?.[0]) {
-        postData.image = (await uploadToCloudinary(req.files.image[0].buffer, "posts", "image")).secure_url;
+        postData.image = (
+            await uploadBuffer(req.files.image[0], { folder: "posts", resource_type: "image" })
+        ).secure_url;
     }
     if (req.files?.video?.[0]) {
-        postData.video = (await uploadToCloudinary(req.files.video[0].buffer, "posts", "video")).secure_url;
+        postData.video = (
+            await uploadBuffer(req.files.video[0], { folder: "posts", resource_type: "video" })
+        ).secure_url;
     }
 
     Object.assign(postData, await buildContentFields(content, parseIdList(req.body.mentionIds)));

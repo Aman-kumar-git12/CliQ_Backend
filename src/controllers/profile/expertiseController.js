@@ -101,17 +101,21 @@ const generateAIExpertise = async (req, res) => {
 
         const AGENT_URL = config.agent.url;
 
-        const response = await axios.post(`${AGENT_URL}/api/expertise/generate`, {
-            user_info: {
-                firstname: user.firstname,
-                lastname: user.lastname,
-                email: user.email,
-                imageUrl: user.imageUrl || "",
+        const response = await axios.post(
+            `${AGENT_URL}/api/expertise/generate`,
+            {
+                user_info: {
+                    firstname: user.firstname,
+                    lastname: user.lastname,
+                    email: user.email,
+                    imageUrl: user.imageUrl || "",
+                },
+                answers: aiAnswers,
+                existing_expertise: {},
+                mode: "fresh",
             },
-            answers: aiAnswers,
-            existing_expertise: {},
-            mode: "fresh",
-        });
+            { headers: config.agent.authHeaders },
+        );
 
         return res.json({
             message: "Expertise generated successfully",

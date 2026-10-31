@@ -11,6 +11,13 @@ const notFound = (req, res) => {
 const errorHandler = (err, req, res, next) => {
     if (res.headersSent) return next(err);
 
+    // Multer's upload limit errors carry no HTTP status of their own
+    if (err.name === "MulterError") {
+        const tooLarge = err.code === "LIMIT_FILE_SIZE";
+        err.status = tooLarge ? 413 : 400;
+        err.message = tooLarge ? "File is too large" : "Invalid upload";
+    }
+
     const status = err.status || err.statusCode || 500;
     if (status >= 500) {
         logger.error(`${req.method} ${req.originalUrl} failed:`, err);

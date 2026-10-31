@@ -79,6 +79,8 @@ const resetPassword = async (req, res) => {
         data: {
             password: hashedPassword,
             emailVerified: true,
+            // Ends every session signed in with the old password
+            tokenVersion: { increment: 1 },
         },
     });
 

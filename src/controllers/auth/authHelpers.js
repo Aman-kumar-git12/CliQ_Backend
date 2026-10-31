@@ -14,8 +14,11 @@ const normalizeEmail = (email) =>
         .trim()
         .toLowerCase();
 
+// "tv" is the user's tokenVersion when the token was issued; bumping tokenVersion ends every older session
 const createAuthToken = (user) =>
-    jwt.sign({ userId: user.id, email: user.email }, config.jwtSecret, { expiresIn: "30d" });
+    jwt.sign({ userId: user.id, email: user.email, tv: user.tokenVersion ?? 0 }, config.jwtSecret, {
+        expiresIn: "30d",
+    });
 
 const setAuthCookie = (res, token) => {
     res.cookie("auth_token", token, {

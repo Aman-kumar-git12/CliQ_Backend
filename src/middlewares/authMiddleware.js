@@ -1,7 +1,7 @@
 const jwt = require("jsonwebtoken");
 const { prisma } = require("../../prisma/prismaClient");
 const { config } = require("../config");
-const { withoutSecrets } = require("../utils/auth/authUtils");
+const { withoutSecrets, isTokenCurrent } = require("../utils/auth/authUtils");
 
 const buildAuthError = (message, status = 401) => {
     const error = new Error(message);
@@ -24,6 +24,10 @@ const getAuthenticatedUser = async (req) => {
 
     if (!user) {
         throw buildAuthError("User not found", 401);
+    }
+
+    if (!isTokenCurrent(decodedObj, user)) {
+        throw buildAuthError("Your session has ended. Please log in again.", 401);
     }
 
     // req.user often ends up in responses, so it never carries the password hash

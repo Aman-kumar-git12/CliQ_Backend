@@ -2,6 +2,9 @@ const express = require("express");
 const messageAiRouter = express.Router();
 const chatAssistantController = require("../controllers/ai/chatAssistantController");
 const { userAuth } = require("../middlewares/authMiddleware");
+const { validateObjectIdParam } = require("../middlewares/validationMiddleware");
+
+for (const name of ["targetuserId", "historyId"]) messageAiRouter.param(name, validateObjectIdParam);
 
 messageAiRouter.post("/message-ai/conversation/:targetuserId", userAuth, chatAssistantController.getMessageAssistant);
 messageAiRouter.post(

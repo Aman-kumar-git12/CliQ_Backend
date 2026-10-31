@@ -1,5 +1,3 @@
-const { prisma } = require("../../../prisma/prismaClient");
-
 const {
     SMART_RECOMMENDATION_BATCH_SIZE,
     SMART_RECOMMENDATION_RESPONSE_SIZE,
@@ -17,59 +15,6 @@ const {
     warmRecommendationCacheForUser,
 } = require("../../utils/recommendations");
 const logger = require("../../utils/logger");
-const { withoutSecrets } = require("../../utils/auth/authUtils");
-
-const getRandomUser = async (req, res) => {
-    try {
-        const loggedInUserId = req.user.id;
-
-        const connections = await prisma.connectionsRequest.findMany({
-            where: {
-                OR: [{ toUserId: loggedInUserId }, { fromUserId: loggedInUserId }],
-            },
-            select: {
-                fromUserId: true,
-                toUserId: true,
-            },
-        });
-
-        const excludedUserIds = new Set();
-        connections.forEach((conn) => {
-            excludedUserIds.add(conn.fromUserId);
-            excludedUserIds.add(conn.toUserId);
-        });
-        excludedUserIds.add(loggedInUserId);
-
-        const excludedArray = Array.from(excludedUserIds);
-
-        const count = await prisma.users.count({
-            where: {
-                id: { notIn: excludedArray },
-            },
-        });
-
-        if (count === 0) {
-            return res.status(404).json({ message: "No random user available" });
-        }
-
-        const skip = Math.floor(Math.random() * count);
-
-        const randomUser = await prisma.users.findMany({
-            where: {
-                id: { notIn: excludedArray },
-            },
-            skip: skip,
-            take: 1,
-        });
-
-        res.json(withoutSecrets(randomUser[0]));
-    } catch (err) {
-        logger.error(`${req.method} ${req.originalUrl} failed:`, err);
-        res.status(500).json({
-            message: "Internal Server Error",
-        });
-    }
-};
 
 const weightedSampleUsers = (users = [], limit = SMART_RECOMMENDATION_RESPONSE_SIZE) => {
     const pool = [...users];
@@ -208,6 +153,5 @@ const getSmartUsers = async (req, res) => {
 };
 
 module.exports = {
-    getRandomUser,
     getSmartUsers,
 };

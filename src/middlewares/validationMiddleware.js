@@ -1,4 +1,5 @@
 const Validator = require("validator");
+const { IMAGE_MAX_BYTES } = require("../upload/upload");
 
 const validateSignupData = (req, res, next) => {
     try {
@@ -64,6 +65,9 @@ const validatePost = (req, res, next) => {
         if (!content && !hasImageFile && !hasVideoFile) {
             throw new Error("Content, image, or video is required");
         }
+        if (hasImageFile && req.files.image[0].size > IMAGE_MAX_BYTES) {
+            throw new Error("Images must be under 10 MB");
+        }
         if (content.length > 500) {
             throw new Error("Content length should be less than or equal to 500");
         }
@@ -104,10 +108,11 @@ const validateProfileEdit = (req, res, next) => {
 const OBJECT_ID_REGEX = /^[0-9a-fA-F]{24}$/;
 
 // For router.param(): a malformed MongoDB id in the URL gets a 400 instead of a Prisma error.
-// "postId" is reported as "Invalid post ID format".
+// "postId" is reported as "Invalid post ID format"; any user-like param ("targetuserId", "toUserId") as "Invalid user ID format".
 const validateObjectIdParam = (req, res, next, value, name) => {
     if (!OBJECT_ID_REGEX.test(value)) {
-        return res.status(400).json({ message: `Invalid ${name.replace(/Id$/, " ID")} format` });
+        const label = /user/i.test(name) ? "user" : name.replace(/Id$/, "");
+        return res.status(400).json({ message: `Invalid ${label} ID format` });
     }
     next();
 };

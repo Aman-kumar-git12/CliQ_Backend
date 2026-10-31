@@ -1,6 +1,6 @@
 const { prisma } = require("../../../prisma/prismaClient");
 const { getIO } = require("../../socket/socket");
-const cloudinary = require("../../upload/cloudinary");
+const { uploadBuffer } = require("../../upload/cloudinary");
 const logger = require("../../utils/logger");
 
 const getRoomId = (conversation) => {
@@ -77,57 +77,21 @@ const updateMessage = async (req, res) => {
 };
 
 const uploadFile = async (req, res) => {
-    try {
-        logger.info(
-            "Upload request received:",
-            req.file
-                ? {
-                      originalname: req.file.originalname,
-                      mimetype: req.file.mimetype,
-                      size: req.file.size,
-                  }
-                : "No file",
-        );
+    if (!req.file) return res.status(400).json({ message: "No file provided" });
 
-        if (!req.file) return res.status(400).json({ message: "No file provided" });
+    const isImage = req.file.mimetype.startsWith("image/");
+    const isAudio = req.file.mimetype.startsWith("audio/") || req.file.originalname.endsWith(".webm");
 
-        const isImage = req.file.mimetype.startsWith("image/");
-        const isAudio = req.file.mimetype.startsWith("audio/") || req.file.originalname.endsWith(".webm");
+    const result = await uploadBuffer(req.file, {
+        folder: isImage ? "chat/images" : "chat/files",
+        resource_type: isImage ? "image" : isAudio ? "video" : "auto",
+    });
 
-        const folder = isImage ? "chat/images" : "chat/files";
-
-        const uploadPromise = new Promise((resolve, reject) => {
-            const stream = cloudinary.uploader.upload_stream(
-                {
-                    folder,
-                    resource_type: isImage ? "image" : isAudio ? "video" : "auto",
-                },
-                (error, result) => {
-                    if (error) {
-                        logger.error("Cloudinary Stream Error:", error);
-                        reject(error);
-                    } else {
-                        resolve(result);
-                    }
-                },
-            );
-            stream.end(req.file.buffer);
-        });
-
-        const result = await uploadPromise;
-        logger.info("Upload result:", result.secure_url);
-
-        res.json({
-            url: result.secure_url,
-            type: isImage ? "image" : "file",
-            originalName: req.file.originalname,
-        });
-    } catch (error) {
-        logger.error("Chat Upload Error Detail:", error);
-        res.status(500).json({
-            message: "Upload failed",
-        });
-    }
+    res.json({
+        url: result.secure_url,
+        type: isImage ? "image" : "file",
+        originalName: req.file.originalname,
+    });
 };
 
 const deleteMessagesBulk = async (req, res) => {
