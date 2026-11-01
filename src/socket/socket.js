@@ -143,6 +143,12 @@ const initialiseSocket = (server) => {
             socket.join(roomId);
         });
 
+        // The frontend keeps one socket for the whole session, so it leaves a chat's room when the chat closes
+        socket.on("leaveChat", ({ targetuserId } = {}) => {
+            if (!targetuserId) return;
+            socket.leave([currentUserId, targetuserId].sort().join("_"));
+        });
+
         socket.on(
             "sendMessage",
             async ({ targetuserId, text: newMessage, image, file, originalName, parentMessageId }, callback) => {

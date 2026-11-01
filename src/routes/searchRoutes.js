@@ -7,6 +7,7 @@ const { validateObjectIdParam } = require("../middlewares/validationMiddleware")
 for (const name of ["id"]) searchRouter.param(name, validateObjectIdParam);
 
 searchRouter.get("/search", userAuth, searchController.globalSearch);
+searchRouter.get("/search/trending-hashtags", userAuth, searchController.getTrendingHashtags);
 searchRouter.get("/user/mention-suggestions", userAuth, searchController.getMentionSuggestions);
 searchRouter.get("/user/search/suggested", userAuth, searchController.getSuggestedUsers);
 searchRouter.get("/user/suggested", userAuth, searchController.getSuggestedUsers); // Legacy support fallback

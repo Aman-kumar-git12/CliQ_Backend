@@ -406,7 +406,31 @@ const suggestMentions = async (prefix, currentUserId, limit = 8) => {
     }));
 };
 
+const TRENDING_HASHTAG_DAYS = 30;
+
+// Most-used hashtags in recent posts (counted once per post), for the Home sidebar
+const trendingHashtags = async (limit = 5) => {
+    const since = new Date(Date.now() - TRENDING_HASHTAG_DAYS * 24 * 60 * 60 * 1000);
+    const blockedIds = await getBlockedUserIds();
+    const posts = await prisma.post.findMany({
+        where: { createdAt: { gte: since }, content: { contains: "#" }, userId: { notIn: blockedIds } },
+        orderBy: { createdAt: "desc" },
+        take: HASHTAG_SCAN_LIMIT,
+        select: { content: true },
+    });
+
+    const counts = new Map();
+    for (const post of posts) {
+        for (const tag of new Set(extractHashtags(post.content))) counts.set(tag, (counts.get(tag) || 0) + 1);
+    }
+    return [...counts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, limit)
+        .map(([tag, postsCount]) => ({ tag, postsCount }));
+};
+
 module.exports = {
+    trendingHashtags,
     suggestMentions,
     parseQuery,
     searchPeople,

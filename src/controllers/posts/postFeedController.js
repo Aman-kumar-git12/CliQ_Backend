@@ -72,7 +72,65 @@ const getRandomPostFeed = async (req, res) => {
     });
 };
 
+const TRENDING_WINDOW_DAYS = 30;
+
+const pageParams = (query) => {
+    const page = Math.max(Number(query.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 30);
+    return { page, limit, skip: (page - 1) * limit };
+};
+
+// "Following" tab: newest posts from the people you are connected with
+const getFollowingFeed = async (req, res) => {
+    const { id } = req.user;
+    const { page, limit, skip } = pageParams(req.query);
+
+    const connections = await prisma.connectionsRequest.findMany({
+        where: { status: "accepted", OR: [{ fromUserId: id }, { toUserId: id }] },
+        select: { fromUserId: true, toUserId: true },
+    });
+    const connectionIds = connections.map((c) => (c.fromUserId === id ? c.toUserId : c.fromUserId));
+    if (connectionIds.length === 0) return res.json({ page, limit, hasMore: false, posts: [] });
+
+    const where = { userId: { in: connectionIds } };
+    const [posts, totalCount] = await Promise.all([
+        prisma.post.findMany({
+            where,
+            include: buildPostInclude(id),
+            skip,
+            take: limit,
+            orderBy: { createdAt: "desc" },
+        }),
+        prisma.post.count({ where }),
+    ]);
+
+    res.json({ page, limit, hasMore: skip + posts.length < totalCount, posts: await formatPosts(posts) });
+};
+
+// "Trending" tab: the last 30 days of posts, most liked first
+const getTrendingFeed = async (req, res) => {
+    const { id } = req.user;
+    const { page, limit, skip } = pageParams(req.query);
+    const since = new Date(Date.now() - TRENDING_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+
+    const where = { createdAt: { gte: since } };
+    const [posts, totalCount] = await Promise.all([
+        prisma.post.findMany({
+            where,
+            include: buildPostInclude(id),
+            skip,
+            take: limit,
+            orderBy: [{ likes: { _count: "desc" } }, { createdAt: "desc" }],
+        }),
+        prisma.post.count({ where }),
+    ]);
+
+    res.json({ page, limit, hasMore: skip + posts.length < totalCount, posts: await formatPosts(posts) });
+};
+
 module.exports = {
     getPostFeed,
     getRandomPostFeed,
+    getFollowingFeed,
+    getTrendingFeed,
 };

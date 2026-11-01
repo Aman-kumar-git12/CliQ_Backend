@@ -6,6 +6,7 @@ const {
     searchPosts,
     searchHashtags,
     suggestMentions,
+    trendingHashtags,
 } = require("../../utils/search/searchUtils");
 
 const getSuggestedUsers = async (req, res) => {
@@ -238,7 +239,13 @@ const getHoverCardData = async (req, res) => {
     res.json(hoverData);
 };
 
+// GET /search/trending-hashtags
+const getTrendingHashtags = async (req, res) => {
+    res.json({ hashtags: await trendingHashtags(5) });
+};
+
 module.exports = {
+    getTrendingHashtags,
     getSuggestedUsers,
     searchUserByName,
     globalSearch,

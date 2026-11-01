@@ -35,6 +35,8 @@ postRouter.get("/link-preview", userAuth, postCrudController.previewLink);
 // Feed
 postRouter.get("/post/feed", userAuth, postFeedController.getPostFeed);
 postRouter.post("/post/feed/random", userAuth, postFeedController.getRandomPostFeed);
+postRouter.get("/post/feed/following", userAuth, postFeedController.getFollowingFeed);
+postRouter.get("/post/feed/trending", userAuth, postFeedController.getTrendingFeed);
 
 // Interactions (likes, comments, reports)
 postRouter.get("/user/post/likes/count/:postId", userAuth, postInteractionController.getLikesCount);
