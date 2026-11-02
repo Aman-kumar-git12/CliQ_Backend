@@ -16,20 +16,22 @@ const getNotifications = async (req, res) => {
         return res.status(400).json({ message: "Invalid cursor" });
     }
 
-    const notifications = await prisma.notification.findMany({
-        where: {
-            recipientId: userId,
-            ...(unreadOnly ? { isRead: false } : {}),
-        },
-        include: notificationInclude,
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        take: limit + 1,
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    });
+    const [notifications, unreadCount] = await Promise.all([
+        prisma.notification.findMany({
+            where: {
+                recipientId: userId,
+                ...(unreadOnly ? { isRead: false } : {}),
+            },
+            include: notificationInclude,
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            take: limit + 1,
+            ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        }),
+        getUnreadCount(userId),
+    ]);
 
     const hasMore = notifications.length > limit;
     const items = hasMore ? notifications.slice(0, limit) : notifications;
-    const unreadCount = await getUnreadCount(userId);
 
     res.json({
         notifications: items,

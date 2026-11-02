@@ -52,6 +52,33 @@ const config = {
     emailVerificationUrl: env.EMAIL_VERIFICATION_URL || "",
 
     jwtSecret: env.JWT_SECRET_KEY,
+    // Set while rotating JWT_SECRET_KEY: tokens signed with the old secret stay valid until they expire
+    jwtPreviousSecret: env.JWT_SECRET_KEY_PREVIOUS || "",
+    // Short-lived access cookie, renewed through the refresh cookie (POST /auth/refresh).
+    // A sign-in lasts sessionDays from login, however often it is renewed; then the user logs in again.
+    session: {
+        accessTtlSeconds: parsePositiveNumber(env.ACCESS_TOKEN_TTL_SECONDS, 15 * 60),
+        sessionDays: parsePositiveNumber(env.SESSION_TTL_DAYS, 7),
+    },
+    // Hops of proxies in front of the server (Render adds one); needed so rate limits see the real client IP
+    trustProxy: parseNumber(env.TRUST_PROXY, nodeEnv === "production" ? 1 : 0),
+    logFormat: env.LOG_FORMAT || (nodeEnv === "production" ? "json" : "pretty"),
+    sentry: {
+        dsn: env.SENTRY_DSN || "",
+        tracesSampleRate: parseNumber(env.SENTRY_TRACES_SAMPLE_RATE, 0.1),
+    },
+    rateLimit: {
+        // The test suite turns limits off (RATE_LIMIT_ENABLED=false) except in the test that checks them
+        enabled: env.RATE_LIMIT_ENABLED !== "false",
+        // Every route, per IP per 15 minutes
+        globalMax: parsePositiveNumber(env.RATE_LIMIT_GLOBAL_MAX, 1000),
+        // Login, signup, OTP and password-reset routes, per IP per 15 minutes
+        authMax: parsePositiveNumber(env.RATE_LIMIT_AUTH_MAX, 30),
+        // Codes and emails for one address, per 15 minutes, whatever the IP
+        perEmailMax: parsePositiveNumber(env.RATE_LIMIT_PER_EMAIL_MAX, 10),
+        // AI routes (they spend LLM quota), per user per minute
+        aiPerMinute: parsePositiveNumber(env.RATE_LIMIT_AI_PER_MINUTE, 20),
+    },
     redisUrl: env.REDIS_URL || "redis://127.0.0.1:6379",
 
     google: {
@@ -75,8 +102,25 @@ const config = {
     // The Python AI agent (WebsiteAgent); it refuses any call without the shared key
     agent: {
         url: env.LLM_SERVICE_URL || "http://localhost:8000",
-        authHeaders: { "X-Internal-Key": env.AGENT_INTERNAL_KEY || "" },
+        // Drafting an expertise page is one LLM call; past this the user gets a clear error instead of a spinner
+        expertiseTimeoutMs: parsePositiveNumber(env.AGENT_EXPERTISE_TIMEOUT_MS, 45000),
+        // Background calls (profile embeddings, help-chat history and feedback): nobody waits on them
+        backgroundTimeoutMs: parsePositiveNumber(env.AGENT_BACKGROUND_TIMEOUT_MS, 15000),
+        // AI help chat: the agent must start answering within this time, and keep sending within it
+        chatIdleTimeoutMs: parsePositiveNumber(env.AGENT_CHAT_IDLE_TIMEOUT_MS, 30000),
+        // A getter so each call also forwards the current request id (required lazily: the logger needs config first)
+        get authHeaders() {
+            const { requestId } = require("../utils/requestContext").currentContext();
+            return {
+                "X-Internal-Key": env.AGENT_INTERNAL_KEY || "",
+                ...(requestId ? { "X-Request-Id": requestId } : {}),
+            };
+        },
     },
+
+    // Off by default: set KEEPALIVE_URL to this API's public address to keep a free Render instance awake
+    // (only outside traffic counts). An always-on free instance uses ~744 of the 750 free hours a month.
+    keepaliveUrl: env.KEEPALIVE_URL || "",
 
     search: {
         semanticTimeoutMs: parseNumber(env.SEMANTIC_SEARCH_TIMEOUT_MS, 6000),

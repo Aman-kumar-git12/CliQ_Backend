@@ -26,7 +26,7 @@ const precomputeProfileEmbedding = (userId, expertise) => {
                     profileId: userId,
                     profile: expertise || {},
                 },
-                { timeout: 2000, headers: config.agent.authHeaders },
+                { timeout: config.agent.backgroundTimeoutMs, headers: config.agent.authHeaders },
             ),
         )
         .catch((error) => {

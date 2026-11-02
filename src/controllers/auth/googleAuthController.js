@@ -4,7 +4,8 @@ const { prisma } = require("../../../prisma/prismaClient");
 const { primeRecommendationFeedForUser } = require("../recommendations");
 const { config } = require("../../config");
 const logger = require("../../utils/logger");
-const { createAuthToken } = require("./authHelpers");
+const crypto = require("crypto");
+const { startSession } = require("./authHelpers");
 
 const GOOGLE_URLS = {
     auth: "https://accounts.google.com/o/oauth2/v2/auth",
@@ -37,15 +38,28 @@ const getFrontendUrl = (state) => {
     return fallbackOrigin;
 };
 
-const issueToken = (res, user) => {
-    const token = createAuthToken(user);
-    res.cookie("auth_token", token, {
-        httpOnly: true,
-        secure: config.isProduction,
-        sameSite: config.isProduction ? "none" : "lax",
-        maxAge: 30 * 24 * 60 * 60 * 1000,
-    });
+// Ties the Google callback to the browser that started the sign-in, so another site can't
+// complete a sign-in into its own account in your browser (login CSRF)
+const OAUTH_STATE_COOKIE = "oauth_state";
+const oauthStateCookieOptions = () => ({
+    httpOnly: true,
+    secure: config.isProduction,
+    sameSite: "lax",
+    path: "/auth/google",
+});
+
+const readStateNonce = (state) => {
+    try {
+        return JSON.parse(Buffer.from(state || "", "base64url").toString("utf-8")).nonce || "";
+    } catch {
+        return "";
+    }
 };
+
+const nonceMatches = (expected, given) =>
+    Boolean(expected && given) &&
+    expected.length === given.length &&
+    crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(given));
 
 const getNextAuthProvider = (provider) => {
     if (provider === "google" || provider === "hybrid") {
@@ -70,10 +84,14 @@ const googleAuthStart = (req, res) => {
         const safeOrigin =
             origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0] || "http://localhost:5173";
 
+        const nonce = crypto.randomBytes(16).toString("hex");
+        res.cookie(OAUTH_STATE_COOKIE, nonce, { ...oauthStateCookieOptions(), maxAge: 10 * 60 * 1000 });
+
         const state = Buffer.from(
             JSON.stringify({
                 mode: req.query.mode || "signin",
                 origin: safeOrigin,
+                nonce,
             }),
         ).toString("base64url");
 
@@ -98,6 +116,14 @@ const googleAuthCallback = async (req, res) => {
     const frontendUrl = getFrontendUrl(state);
 
     try {
+        const expectedNonce = req.cookies?.[OAUTH_STATE_COOKIE];
+        res.clearCookie(OAUTH_STATE_COOKIE, oauthStateCookieOptions());
+        if (!nonceMatches(expectedNonce, readStateNonce(state))) {
+            return res.redirect(
+                `${frontendUrl}/login?authError=${encodeURIComponent("Sign-in expired. Please try again.")}`,
+            );
+        }
+
         const { code } = req.query;
         const config = getGoogleConfig();
 
@@ -115,6 +141,12 @@ const googleAuthCallback = async (req, res) => {
         const { data: gUser } = await axios.get(GOOGLE_URLS.user, {
             headers: { Authorization: `Bearer ${tokens.access_token}` },
         });
+        // Only a Google-verified address may sign in to (or take over) the account with that email
+        if (!gUser.email || gUser.email_verified === false) {
+            return res.redirect(
+                `${frontendUrl}/login?authError=${encodeURIComponent("Your Google email address is not verified.")}`,
+            );
+        }
         const email = gUser.email.toLowerCase();
         const existingUser = await prisma.users.findUnique({
             where: { email },
@@ -165,7 +197,7 @@ const googleAuthCallback = async (req, res) => {
             });
         }
 
-        issueToken(res, user);
+        await startSession(res, user);
         primeRecommendationFeedForUser(user.id, user.expertise);
         res.redirect(`${frontendUrl}/home`);
     } catch (e) {

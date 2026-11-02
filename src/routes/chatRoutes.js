@@ -5,15 +5,27 @@ const messageController = require("../controllers/chat/messageController");
 const { userAuth } = require("../middlewares/authMiddleware");
 const { chatUpload } = require("../upload/upload");
 const { validateObjectIdParam } = require("../middlewares/validationMiddleware");
+const { validate } = require("../middlewares/validate");
+const schemas = require("../validation/schemas");
 
 for (const name of ["messageId", "userId", "targetuserId"]) chatRouter.param(name, validateObjectIdParam);
 
 chatRouter.get("/chat/conversations", userAuth, conversationController.getConversations);
 chatRouter.get("/chat/history/:targetuserId", userAuth, conversationController.getChatHistory);
 chatRouter.delete("/chat/message/:messageId", userAuth, messageController.deleteMessage);
-chatRouter.put("/chat/message/:messageId", userAuth, messageController.updateMessage);
+chatRouter.put(
+    "/chat/message/:messageId",
+    userAuth,
+    validate({ body: schemas.messageUpdate }),
+    messageController.updateMessage,
+);
 chatRouter.post("/chat/upload", userAuth, chatUpload.single("file"), messageController.uploadFile);
-chatRouter.post("/chat/delete-bulk", userAuth, messageController.deleteMessagesBulk);
+chatRouter.post(
+    "/chat/delete-bulk",
+    userAuth,
+    validate({ body: schemas.messageBulkDelete }),
+    messageController.deleteMessagesBulk,
+);
 chatRouter.get("/chat/public/groups/:userId", userAuth, conversationController.getPublicUserGroups);
 
 module.exports = chatRouter;

@@ -3,6 +3,13 @@ const { buildEmailVerificationUrl } = require("./emailVerificationUtils");
 const { config } = require("../../config");
 const logger = require("../logger");
 
+// Names are typed by users, so they are escaped before going into an email's HTML
+const escapeHtml = (value) =>
+    String(value).replace(
+        /[&<>"']/g,
+        (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch],
+    );
+
 /**
  * Send email via Brevo HTTP API (v3)
  * This avoids SMTP 535 auth errors and port blocks on cloud hosts.
@@ -50,7 +57,7 @@ const sendVerificationEmail = async ({ email, firstname, token }) => {
     const verificationUrl = buildEmailVerificationUrl(token);
 
     const html = `
-    <p>Hi ${firstname || "there"},</p>
+    <p>Hi ${escapeHtml(firstname || "there")},</p>
     <p>Please verify your email address by clicking the link below:</p>
     <p><a href="${verificationUrl}">${verificationUrl}</a></p>
     <p>This link will expire in 1 hour.</p>
@@ -99,7 +106,7 @@ const sendOTPEmail = async ({ email, firstname, otp }) => {
           <!-- Body -->
           <tr>
             <td style="padding:36px 40px;">
-              <p style="margin:0 0 8px;font-size:15px;color:#aaaaaa;">Hi <strong style="color:#ffffff;">${firstname || "there"}</strong>,</p>
+              <p style="margin:0 0 8px;font-size:15px;color:#aaaaaa;">Hi <strong style="color:#ffffff;">${escapeHtml(firstname || "there")}</strong>,</p>
               <p style="margin:0 0 32px;font-size:15px;color:#888888;line-height:1.6;">
                 Use the code below to verify your email address. It expires in <strong style="color:#ffffff;">10 minutes</strong>.
               </p>
@@ -178,7 +185,7 @@ const sendPasswordResetEmail = async ({ email, firstname, otp }) => {
           <!-- Body -->
           <tr>
             <td style="padding:36px 40px;">
-              <p style="margin:0 0 8px;font-size:15px;color:#aaaaaa;">Hi <strong style="color:#ffffff;">${firstname || "there"}</strong>,</p>
+              <p style="margin:0 0 8px;font-size:15px;color:#aaaaaa;">Hi <strong style="color:#ffffff;">${escapeHtml(firstname || "there")}</strong>,</p>
               <p style="margin:0 0 32px;font-size:15px;color:#888888;line-height:1.6;">
                 We received a request to reset your password. Use the code below to securely verify your identity. It expires in <strong style="color:#ffffff;">10 minutes</strong>.
               </p>

@@ -33,6 +33,7 @@ enum UnblockRequestStatus {
 enum VerificationTokenType {
   email_verification
   password_reset
+  email_change
 }
 
 model Users {
@@ -74,6 +75,7 @@ model Users {
   aiChatSessions AIChatSession[]
   unblockRequests UnblockRequest[]
   verificationTokens VerificationToken[]
+  refreshTokens      RefreshToken[]
 
   notificationsReceived Notification[] @relation("notificationRecipient")
   notificationsSent     Notification[] @relation("notificationActor")
@@ -89,10 +91,36 @@ model VerificationToken {
   type        VerificationTokenType @default(email_verification)
   expiresAt   DateTime
   createdAt   DateTime              @default(now())
+  // Wrong codes entered against this token; it is deleted after MAX_OTP_ATTEMPTS
+  attempts    Int?
+  // email_change only: the address the code was sent to, applied once the code is confirmed
+  pendingEmail String?
 
   user        Users                 @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, type, expiresAt])
+}
+
+// One per signed-in browser. The cookie holds a random value; only its hash is stored.
+// Each use replaces it with a new one in the same family; reusing a replaced one ends the whole family.
+model RefreshToken {
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String    @db.ObjectId
+  tokenHash    String    @unique
+  familyId     String
+  // The user's tokenVersion at sign-in: a password change ends the session
+  tokenVersion Int       @default(0)
+  // Fixed at sign-in and kept by every renewal: the session ends this many days after login
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  // The token that replaced this one; tells a lost renewal response apart from a copied token
+  replacedById String?   @db.ObjectId
+  createdAt    DateTime  @default(now())
+
+  user         Users     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
 }
 
 model UnblockRequest {
@@ -174,6 +202,8 @@ model Post {
   reposts    Post[]  @relation("Reposts")
 
   @@index([repostOfId, userId])
+  @@index([createdAt])
+  @@index([userId, createdAt])
 }
 
 model SavedPost {
@@ -213,6 +243,8 @@ model Comment {
   replies  Comment[] @relation("CommentReplies")
 
   @@index([postId, parentId, createdAt])
+  // Deleting a comment deletes its replies
+  @@index([parentId])
 }
   
 
@@ -229,6 +261,8 @@ model Conversation {
   participants   Users[]  @relation(fields: [participantIds], references: [id])
   
   messages     Message[]
+
+  @@index([participantIds])
 }
 
 enum MessageStatus {
@@ -259,6 +293,8 @@ model Message {
   sender       Users        @relation(fields: [senderId], references: [id], onDelete: Cascade)
   parentMessage Message?    @relation("Replies", fields: [parentMessageId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   replies       Message[]   @relation("Replies")
+
+  @@index([conversationId, createdAt])
 }
 
 model Like {
@@ -273,6 +309,7 @@ model Like {
   post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@unique([userId, postId])
+  @@index([postId])
 }
 
 model Report {
@@ -288,6 +325,11 @@ model Report {
 
   commentId String?  @db.ObjectId
   comment   Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  // Every post read checks "has the viewer reported it" (userId + postId in the page); reportPost and
+  // reportComment check for an earlier report the same way
+  @@index([userId, postId])
+  @@index([userId, commentId])
 }
 
 model AIChatSession {
@@ -301,6 +343,8 @@ model AIChatSession {
   user      Users    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   messages  AIChatMessage[]
+
+  @@index([userId, updatedAt])
 }
 
 model AIChatMessage {
@@ -314,6 +358,8 @@ model AIChatMessage {
 
   sessionId String   @db.ObjectId
   session   AIChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
 }
 
 model MessageAIReplyHistory {
@@ -359,6 +405,19 @@ model RecommendationEvent {
   @@index([userId, action])
   @@index([userId, candidateUserId])
   @@index([source, createdAt])
+}
+
+// Each user's ranked Get Connections list, kept between server restarts so opening the page is one read.
+// items holds only ids, scores and reasons; profiles are loaded when the list is shown.
+model RecommendationList {
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String    @unique @db.ObjectId
+  items      Json
+  strategy   String
+  computedAt DateTime
+  // Set when something relevant changed (profile, connection, feedback): the list is still shown,
+  // and recomputed in the background
+  staleAt    DateTime?
 }
 
 model RecommendationPreference {
@@ -412,4 +471,6 @@ model Notification {
   @@index([recipientId, createdAt])
   @@index([recipientId, isRead])
   @@index([actorId, type, postId])
+  // Reviewing a connection request removes its notification by this id
+  @@index([connectionRequestId])
 }

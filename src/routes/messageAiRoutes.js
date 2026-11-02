@@ -3,13 +3,21 @@ const messageAiRouter = express.Router();
 const chatAssistantController = require("../controllers/ai/chatAssistantController");
 const { userAuth } = require("../middlewares/authMiddleware");
 const { validateObjectIdParam } = require("../middlewares/validationMiddleware");
+const { validate } = require("../middlewares/validate");
+const schemas = require("../validation/schemas");
 
 for (const name of ["targetuserId", "historyId"]) messageAiRouter.param(name, validateObjectIdParam);
 
-messageAiRouter.post("/message-ai/conversation/:targetuserId", userAuth, chatAssistantController.getMessageAssistant);
+messageAiRouter.post(
+    "/message-ai/conversation/:targetuserId",
+    userAuth,
+    validate({ body: schemas.messageAssistant }),
+    chatAssistantController.getMessageAssistant,
+);
 messageAiRouter.post(
     "/message-ai/conversation/stream/:targetuserId",
     userAuth,
+    validate({ body: schemas.messageAssistant }),
     chatAssistantController.streamMessageAssistant,
 );
 messageAiRouter.get("/message-ai/history/:targetuserId", userAuth, chatAssistantController.getMessageAssistantHistory);

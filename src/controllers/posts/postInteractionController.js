@@ -91,30 +91,32 @@ const addComment = async (req, res) => {
 
     // The person being replied to gets "reply"; the post owner gets "comment"
     // unless they are that person. Mentions skip anyone already notified.
-    const notified = [];
-    if (parent) {
-        await createNotification({
-            recipientId: parent.userId,
-            actorId: id,
-            type: "reply",
-            postId,
-            commentId: created.id,
-        });
-        notified.push(parent.userId);
-    }
-    if (!notified.includes(post.userId)) {
-        await createNotification({
-            recipientId: post.userId,
-            actorId: id,
-            type: "comment",
-            postId,
-            commentId: created.id,
-        });
-        notified.push(post.userId);
-    }
-    await notifyMentions({ mentionIds, actorId: id, postId, commentId: created.id, skipIds: notified });
+    // createNotification never throws, so all of them (and the mention lookup) can go out together
+    const notified = parent ? [parent.userId] : [];
+    if (!notified.includes(post.userId)) notified.push(post.userId);
+    const [mentionMap] = await Promise.all([
+        getCommentMentionMap([created]),
+        parent
+            ? createNotification({
+                  recipientId: parent.userId,
+                  actorId: id,
+                  type: "reply",
+                  postId,
+                  commentId: created.id,
+              })
+            : null,
+        post.userId !== parent?.userId
+            ? createNotification({
+                  recipientId: post.userId,
+                  actorId: id,
+                  type: "comment",
+                  postId,
+                  commentId: created.id,
+              })
+            : null,
+        notifyMentions({ mentionIds, actorId: id, postId, commentId: created.id, skipIds: notified }),
+    ]);
 
-    const mentionMap = await getCommentMentionMap([created]);
     res.json({ ...formatComment(created, mentionMap), replies: [], repliesCount: 0 });
 };
 
@@ -219,9 +221,15 @@ const createLike = async (req, res) => {
         await notifyLike();
         return res.json({ message: "Post liked", isLiked: true });
     } else {
-        await prisma.like.create({
-            data: { userId, postId, isLiked: true },
-        });
+        try {
+            await prisma.like.create({
+                data: { userId, postId, isLiked: true },
+            });
+        } catch (err) {
+            // A double-click can race the unique (userId, postId) index; the post is liked either way
+            if (err?.code !== "P2002") throw err;
+            return res.json({ message: "Post liked", isLiked: true });
+        }
         await notifyLike();
         return res.json({ message: "Post liked", isLiked: true });
     }

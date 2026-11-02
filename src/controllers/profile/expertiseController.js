@@ -100,6 +100,11 @@ const generateAIExpertise = async (req, res) => {
         }
 
         const AGENT_URL = config.agent.url;
+        // Stop the LLM call if the user leaves the page
+        const controller = new AbortController();
+        res.on("close", () => {
+            if (!res.writableEnded) controller.abort();
+        });
 
         const response = await axios.post(
             `${AGENT_URL}/api/expertise/generate`,
@@ -114,7 +119,7 @@ const generateAIExpertise = async (req, res) => {
                 existing_expertise: {},
                 mode: "fresh",
             },
-            { headers: config.agent.authHeaders },
+            { headers: config.agent.authHeaders, timeout: config.agent.expertiseTimeoutMs, signal: controller.signal },
         );
 
         return res.json({
@@ -123,9 +128,15 @@ const generateAIExpertise = async (req, res) => {
             generation_source: response.data.generation_source,
         });
     } catch (error) {
+        if (error.code === "ERR_CANCELED") return undefined; // the user left
         logger.error("AI Generation Error:", error.message);
-        return res.status(500).json({
-            message: "Failed to generate expertise using AI",
+        // The agent is down, asleep or too slow: a gateway error the page can offer to retry
+        const timedOut = error.code === "ECONNABORTED" || error.code === "ETIMEDOUT";
+        return res.status(timedOut ? 504 : 502).json({
+            message: timedOut
+                ? "The AI took too long to draft your expertise. Please try again."
+                : "Failed to generate expertise using AI. Please try again in a minute.",
+            code: timedOut ? "AI_TIMEOUT" : "AI_UNAVAILABLE",
         });
     }
 };

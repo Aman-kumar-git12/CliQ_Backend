@@ -55,28 +55,31 @@ const getPostById = async (req, res) => {
 
 const createPost = async (req, res) => {
     const content = typeof req.body.content === "string" ? req.body.content.trim() : "";
-    const postData = { content, userId: req.user.id };
+    const image = req.files?.image?.[0];
+    const video = req.files?.video?.[0];
 
-    if (req.files?.image?.[0]) {
-        postData.image = (
-            await uploadBuffer(req.files.image[0], { folder: "posts", resource_type: "image" })
-        ).secure_url;
-    }
-    if (req.files?.video?.[0]) {
-        postData.video = (
-            await uploadBuffer(req.files.video[0], { folder: "posts", resource_type: "video" })
-        ).secure_url;
-    }
-
-    Object.assign(postData, await buildContentFields(content, parseIdList(req.body.mentionIds)));
+    // The uploads and the mention/link-preview lookups don't depend on each other
+    const [imageUpload, videoUpload, contentFields] = await Promise.all([
+        image ? uploadBuffer(image, { folder: "posts", resource_type: "image" }) : null,
+        video ? uploadBuffer(video, { folder: "posts", resource_type: "video" }) : null,
+        buildContentFields(content, parseIdList(req.body.mentionIds)),
+    ]);
+    const postData = {
+        content,
+        userId: req.user.id,
+        ...(imageUpload ? { image: imageUpload.secure_url } : {}),
+        ...(videoUpload ? { video: videoUpload.secure_url } : {}),
+        ...contentFields,
+    };
 
     const created = await prisma.post.create({ data: postData });
-    await notifyMentions({ mentionIds: created.mentionIds, actorId: req.user.id, postId: created.id });
-
-    const post = await prisma.post.findUnique({
-        where: { id: created.id },
-        include: buildPostInclude(req.user.id),
-    });
+    const [post] = await Promise.all([
+        prisma.post.findUnique({
+            where: { id: created.id },
+            include: buildPostInclude(req.user.id),
+        }),
+        notifyMentions({ mentionIds: created.mentionIds, actorId: req.user.id, postId: created.id }),
+    ]);
     res.json(await formatPost(post));
 };
 
@@ -119,13 +122,16 @@ const updatePost = async (req, res) => {
 
     // Only people newly mentioned by this edit get notified.
     const previous = new Set(post.mentionIds || []);
-    await notifyMentions({
-        mentionIds: fields.mentionIds.filter((id) => !previous.has(id)),
-        actorId: req.user.id,
-        postId,
-    });
+    const [updatedPost] = await Promise.all([
+        formatPost(updated),
+        notifyMentions({
+            mentionIds: fields.mentionIds.filter((id) => !previous.has(id)),
+            actorId: req.user.id,
+            postId,
+        }),
+    ]);
 
-    res.json({ message: "Post updated successfully", updatedPost: await formatPost(updated) });
+    res.json({ message: "Post updated successfully", updatedPost });
 };
 
 /**
@@ -179,24 +185,23 @@ const repostPost = async (req, res) => {
         data: { content, userId, repostOfId: original.id, ...fields },
     });
 
-    await createNotification({
-        recipientId: original.userId,
-        actorId: userId,
-        type: "repost",
-        postId: original.id,
-    });
-    if (fields.mentionIds?.length) {
-        await notifyMentions({
-            mentionIds: fields.mentionIds,
-            actorId: userId,
-            postId: created.id,
-            skipIds: [original.userId],
-        });
-    }
-
     const [post, repostsCount] = await Promise.all([
         prisma.post.findUnique({ where: { id: created.id }, include: buildPostInclude(userId) }),
         prisma.post.count({ where: { repostOfId: original.id } }),
+        createNotification({
+            recipientId: original.userId,
+            actorId: userId,
+            type: "repost",
+            postId: original.id,
+        }),
+        fields.mentionIds?.length
+            ? notifyMentions({
+                  mentionIds: fields.mentionIds,
+                  actorId: userId,
+                  postId: created.id,
+                  skipIds: [original.userId],
+              })
+            : null,
     ]);
     res.json({
         message: content ? "Quote posted" : "Reposted",

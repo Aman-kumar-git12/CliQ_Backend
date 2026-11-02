@@ -1,12 +1,11 @@
 const { prisma } = require("../../../prisma/prismaClient");
 const { toSafeUser } = require("../../utils/auth/authUtils");
-const { hashVerificationToken, hashOTP } = require("../../utils/auth/emailVerificationUtils");
+const { hashVerificationToken, consumeOTP } = require("../../utils/auth/emailVerificationUtils");
 const { primeRecommendationFeedForUser } = require("../recommendations");
 const logger = require("../../utils/logger");
 const {
     normalizeEmail,
-    createAuthToken,
-    setAuthCookie,
+    startSession,
     sendFreshOTP,
     MAX_VERIFICATION_RESENDS,
     VERIFICATION_RESEND_COOLDOWN_MS,
@@ -49,8 +48,7 @@ const verifyEmail = async (req, res) => {
             },
         });
 
-        const authToken = createAuthToken(user);
-        setAuthCookie(res, authToken);
+        await startSession(res, user);
         primeRecommendationFeedForUser(user.id, user.expertise);
 
         return res.json({
@@ -141,72 +139,34 @@ const resendVerificationEmail = async (req, res) => {
 };
 
 const verifyOTP = async (req, res) => {
-    try {
-        const email = normalizeEmail(req.body?.email);
-        const otp = String(req.body?.otp || "").trim();
+    const { email, otp } = req.body;
 
-        if (!email || !otp) {
-            return res.status(400).json({ message: "Email and OTP are required." });
-        }
-
-        if (!/^\d{6}$/.test(otp)) {
-            return res.status(400).json({ message: "OTP must be a 6-digit number." });
-        }
-
-        const user = await prisma.users.findUnique({ where: { email } });
-
-        if (!user) {
-            return res.status(404).json({ message: "No account found with this email." });
-        }
-
-        if (user.emailVerified) {
-            const authToken = createAuthToken(user);
-            setAuthCookie(res, authToken);
-            primeRecommendationFeedForUser(user.id, user.expertise);
-            return res.json({ message: "Email already verified.", user: toSafeUser(user) });
-        }
-
-        const otpHash = hashOTP(otp);
-
-        const record = await prisma.verificationToken.findUnique({
-            where: { tokenHash: otpHash },
-        });
-
-        if (!record || record.userId !== user.id || record.type !== "email_verification") {
-            return res.status(400).json({ message: "Invalid verification code. Please check and try again." });
-        }
-
-        if (record.expiresAt.getTime() < Date.now()) {
-            await prisma.verificationToken.delete({ where: { id: record.id } });
-            return res.status(400).json({
-                message: "This code has expired. Please request a new one.",
-                code: "OTP_EXPIRED",
-            });
-        }
-
-        const updatedUser = await prisma.users.update({
-            where: { id: user.id },
-            data: { emailVerified: true },
-        });
-
-        await prisma.verificationToken.deleteMany({
-            where: { userId: user.id, type: "email_verification" },
-        });
-
-        const authToken = createAuthToken(updatedUser);
-        setAuthCookie(res, authToken);
-        primeRecommendationFeedForUser(updatedUser.id, updatedUser.expertise);
-
-        return res.json({
-            message: "Email verified successfully!",
-            user: toSafeUser(updatedUser),
-        });
-    } catch (err) {
-        logger.error(`${req.method} ${req.originalUrl} failed:`, err);
-        return res.status(500).json({
-            message: "Internal server error",
-        });
+    const user = await prisma.users.findUnique({ where: { email } });
+    if (!user) {
+        return res.status(400).json({ message: "Invalid verification code. Please check and try again." });
     }
+
+    // Never a session without a correct code: an already-verified account simply logs in normally
+    if (user.emailVerified) {
+        return res
+            .status(400)
+            .json({ message: "This email is already verified. Please log in.", code: "ALREADY_VERIFIED" });
+    }
+
+    await consumeOTP(prisma, { userId: user.id, type: "email_verification", otp });
+
+    const updatedUser = await prisma.users.update({
+        where: { id: user.id },
+        data: { emailVerified: true },
+    });
+
+    await startSession(res, updatedUser);
+    primeRecommendationFeedForUser(updatedUser.id, updatedUser.expertise);
+
+    return res.json({
+        message: "Email verified successfully!",
+        user: toSafeUser(updatedUser),
+    });
 };
 
 module.exports = { verifyEmail, resendVerificationEmail, verifyOTP };

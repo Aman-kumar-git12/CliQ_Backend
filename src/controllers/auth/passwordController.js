@@ -1,28 +1,28 @@
 const { prisma } = require("../../../prisma/prismaClient");
 const bcrypt = require("bcrypt");
 const { toSafeUser } = require("../../utils/auth/authUtils");
-const { createOTP, hashOTP } = require("../../utils/auth/emailVerificationUtils");
+const { createOTP, consumeOTP } = require("../../utils/auth/emailVerificationUtils");
 const { sendPasswordResetEmail } = require("../../utils/auth/mailUtils");
-const { normalizeEmail, createAuthToken, setAuthCookie } = require("./authHelpers");
+const { startSession, endAllSessions } = require("./authHelpers");
 
 const forgotPassword = async (req, res) => {
-    const email = normalizeEmail(req.body?.email);
-    if (!email) return res.status(400).json({ message: "Email is required." });
+    const { email } = req.body;
 
     const user = await prisma.users.findUnique({ where: { email } });
     if (!user) {
         return res.json({ message: "If an account exists, a password reset code has been sent." });
     }
 
+    // Same answer as an unknown address, so the reply doesn't reveal which emails have accounts
     if (user.authProvider === "google") {
-        return res.status(400).json({ message: "This account uses Google sign-in. Password reset is not available." });
+        return res.json({ message: "If an account exists, a password reset code has been sent." });
     }
 
     await prisma.verificationToken.deleteMany({
         where: { userId: user.id, type: "password_reset" },
     });
 
-    const { otp, otpHash, expiresAt } = createOTP();
+    const { otp, otpHash, expiresAt } = createOTP(user.id);
 
     await prisma.verificationToken.create({
         data: {
@@ -39,38 +39,14 @@ const forgotPassword = async (req, res) => {
 };
 
 const resetPassword = async (req, res) => {
-    const email = normalizeEmail(req.body?.email);
-    const otp = String(req.body?.otp || "").trim();
-    const newPassword = req.body?.newPassword;
-
-    if (!email || !otp || !newPassword) {
-        return res.status(400).json({ message: "Email, OTP, and new password are required." });
-    }
-
-    if (newPassword.length < 8) {
-        return res.status(400).json({ message: "New password must be at least 8 characters long." });
-    }
+    const { email, otp, newPassword } = req.body;
 
     const user = await prisma.users.findUnique({ where: { email } });
     if (!user) {
-        return res.status(404).json({ message: "Account not found." });
-    }
-
-    const otpHash = hashOTP(otp);
-    const record = await prisma.verificationToken.findUnique({
-        where: { tokenHash: otpHash },
-    });
-
-    if (!record || record.userId !== user.id || record.type !== "password_reset") {
         return res.status(400).json({ message: "Invalid or expired reset code." });
     }
 
-    if (record.expiresAt.getTime() < Date.now()) {
-        await prisma.verificationToken.delete({ where: { id: record.id } });
-        return res
-            .status(400)
-            .json({ message: "This code has expired. Please request a new one.", code: "OTP_EXPIRED" });
-    }
+    await consumeOTP(prisma, { userId: user.id, type: "password_reset", otp });
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
@@ -83,13 +59,8 @@ const resetPassword = async (req, res) => {
             tokenVersion: { increment: 1 },
         },
     });
-
-    await prisma.verificationToken.deleteMany({
-        where: { userId: user.id, type: "password_reset" },
-    });
-
-    const authToken = createAuthToken(updatedUser);
-    setAuthCookie(res, authToken);
+    await endAllSessions(user.id);
+    await startSession(res, updatedUser);
 
     return res.json({
         message: "Password reset correctly. You are now logged in.",

@@ -1,5 +1,6 @@
 const { prisma } = require("../../../prisma/prismaClient");
 const { publicUserSelect, listUserSelect, toPublicUser } = require("../../utils/auth/authUtils");
+const { getProfileStats } = require("../profile/profileController");
 const {
     parseQuery,
     searchPeople,
@@ -101,126 +102,66 @@ const getUserById = async (req, res) => {
         return res.status(404).json({ message: "Invalid User ID format" });
     }
 
-    const user = await prisma.users.findUnique({
-        where: { id },
-        select: publicUserSelect,
-    });
+    const [user, stats] = await Promise.all([
+        prisma.users.findUnique({ where: { id }, select: publicUserSelect }),
+        getProfileStats(id),
+    ]);
 
     if (!user) {
         return res.status(404).json({ message: "User not found" });
     }
 
-    // Connections Count
-    const connectionCount = await prisma.connectionsRequest.count({
-        where: {
-            status: "accepted",
-            OR: [{ fromUserId: id }, { toUserId: id }],
-        },
-    });
-
-    // Posts Count
-    const postsCount = await prisma.post.count({
-        where: { userId: id },
-    });
-
-    // Groups Count
-    const groupsCount = await prisma.conversation.count({
-        where: {
-            isGroup: true,
-            participantIds: { has: id },
-        },
-    });
-
-    const userWithStats = {
-        ...toPublicUser(user),
-        postsCount,
-        connectionsCount: connectionCount,
-        groupsCount,
-    };
-
-    res.json({ user: userWithStats });
+    res.json({ user: { ...toPublicUser(user), ...stats } });
 };
 
 const getHoverCardData = async (req, res) => {
     const { id: targetUserId } = req.params;
     const currentUserId = req.user.id;
 
-    // Fetch user basic info and counts
-    const user = await prisma.users.findUnique({
-        where: { id: targetUserId },
-        select: {
-            id: true,
-            firstname: true,
-            lastname: true,
-            imageUrl: true,
-            _count: {
-                select: {
-                    posts: true,
-                },
+    // Everything on the card is independent, so it is read in one round trip. The newest posts with an
+    // image come first; plain posts fill the remaining slots.
+    const recentSelect = { id: true, image: true };
+    const [user, connectionsCount, groupsCount, imagePosts, latestPosts, connection] = await Promise.all([
+        prisma.users.findUnique({
+            where: { id: targetUserId },
+            select: { id: true, firstname: true, lastname: true, imageUrl: true, _count: { select: { posts: true } } },
+        }),
+        prisma.connectionsRequest.count({
+            where: { status: "accepted", OR: [{ fromUserId: targetUserId }, { toUserId: targetUserId }] },
+        }),
+        prisma.conversation.count({ where: { isGroup: true, participantIds: { has: targetUserId } } }),
+        prisma.post.findMany({
+            where: { userId: targetUserId, image: { not: null } },
+            take: 3,
+            orderBy: { createdAt: "desc" },
+            select: recentSelect,
+        }),
+        prisma.post.findMany({
+            where: { userId: targetUserId },
+            take: 3,
+            orderBy: { createdAt: "desc" },
+            select: recentSelect,
+        }),
+        prisma.connectionsRequest.findFirst({
+            where: {
+                OR: [
+                    { fromUserId: currentUserId, toUserId: targetUserId },
+                    { fromUserId: targetUserId, toUserId: currentUserId },
+                ],
             },
-        },
-    });
+            select: { status: true, fromUserId: true },
+        }),
+    ]);
 
     if (!user) {
         return res.status(404).json({ message: "User not found" });
     }
 
-    // Fetch accepted connections count
-    const connectionsCount = await prisma.connectionsRequest.count({
-        where: {
-            status: "accepted",
-            OR: [{ fromUserId: targetUserId }, { toUserId: targetUserId }],
-        },
-    });
-
-    // Fetch groups count (Conversations where isGroup: true and user is participant)
-    const groupsCount = await prisma.conversation.count({
-        where: {
-            isGroup: true,
-            participantIds: { has: targetUserId },
-        },
-    });
-
-    // Fetch 3 most recent posts with images
-    const recentPosts = await prisma.post.findMany({
-        where: {
-            userId: targetUserId,
-            image: { not: null },
-        },
-        take: 3,
-        orderBy: { createdAt: "desc" },
-        select: {
-            id: true,
-            image: true,
-        },
-    });
-
-    // If not enough posts with images, fetch any recent posts
-    if (recentPosts.length < 3) {
-        const morePosts = await prisma.post.findMany({
-            where: {
-                userId: targetUserId,
-                id: { notIn: recentPosts.map((p) => p.id) },
-            },
-            take: 3 - recentPosts.length,
-            orderBy: { createdAt: "desc" },
-            select: {
-                id: true,
-                image: true,
-            },
-        });
-        recentPosts.push(...morePosts);
+    const recentPosts = [...imagePosts];
+    for (const post of latestPosts) {
+        if (recentPosts.length >= 3) break;
+        if (!recentPosts.some((p) => p.id === post.id)) recentPosts.push(post);
     }
-
-    // Check connection status with current user
-    const connection = await prisma.connectionsRequest.findFirst({
-        where: {
-            OR: [
-                { fromUserId: currentUserId, toUserId: targetUserId },
-                { fromUserId: targetUserId, toUserId: currentUserId },
-            ],
-        },
-    });
 
     const hoverData = {
         id: user.id,
@@ -233,6 +174,13 @@ const getHoverCardData = async (req, res) => {
         groupsCount,
         recentPosts,
         connectionStatus: connection ? connection.status : "none",
+        // For a pending request ("interested"): who sent it, so the card can offer Accept or Cancel
+        requestDirection:
+            connection?.status === "interested"
+                ? connection.fromUserId === currentUserId
+                    ? "outgoing"
+                    : "incoming"
+                : null,
         isMe: currentUserId === targetUserId,
     };
 

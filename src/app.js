@@ -1,13 +1,6 @@
-// Starts the CliQ API server: security middleware, CORS, routes, sockets and the status page.
+// Starts the CliQ API server: the Express app (src/createApp.js), sockets, the status page and the self-ping.
 const { config, missingVariables } = require("./config");
 const logger = require("./utils/logger");
-const express = require("express");
-const http = require("http");
-const cors = require("cors");
-const helmet = require("helmet");
-const morgan = require("morgan");
-const cookieParser = require("cookie-parser");
-const rateLimit = require("express-rate-limit");
 
 // 1. Environment Validation: fail before loading anything that needs these
 const missingVars = missingVariables();
@@ -16,13 +9,13 @@ if (missingVars.length > 0) {
     process.exit(1);
 }
 
+// Sentry must start before Express is loaded
+const { captureException } = require("./utils/monitoring");
+const http = require("http");
 const axios = require("axios"); // For self-pings
-const routes = require("./routes/index");
+const { createApp } = require("./createApp");
 const { initialiseSocket } = require("./socket/socket");
 const redisClient = require("./config/redisClient");
-const { notFound, errorHandler } = require("./middlewares/errorHandler");
-
-const app = express();
 
 // The port actually bound (it moves up when the configured one is busy)
 let activePort = config.port;
@@ -32,38 +25,39 @@ const startTime = Date.now();
 const heartbeats = [];
 const MAX_HEARTBEATS = 10;
 
-// Internal Heartbeat Service (Self-Ping every 12 mins to avoid Render 15m sleep limit)
+// Heartbeat: Render's free tier sleeps after 15 minutes without inbound traffic. Only requests arriving from
+// outside count, so a localhost ping (the default) doesn't keep it awake; KEEPALIVE_URL (the public address)
+// does, at the cost of ~744 free instance hours a month.
+const HEARTBEAT_INTERVAL_MS = 12 * 60 * 1000;
 const startHeartbeat = () => {
-    setInterval(
-        async () => {
-            try {
-                await axios.get(`http://localhost:${activePort}/api/health`);
-                heartbeats.unshift(new Date().toISOString());
-                if (heartbeats.length > MAX_HEARTBEATS) heartbeats.pop();
-                logger.info(`[HEARTBEAT] Self-ping successful at ${new Date().toLocaleTimeString()}`);
-            } catch (error) {
-                logger.error(`[HEARTBEAT] Self-ping failed: ${error.message}`);
-            }
-        },
-        12 * 60 * 1000,
-    ); // 12 minutes
+    const target = config.keepaliveUrl
+        ? `${config.keepaliveUrl.replace(/\/+$/, "")}/api/health`
+        : `http://localhost:${activePort}/api/health`;
+    setInterval(async () => {
+        try {
+            await axios.get(target, { timeout: 30000 });
+            heartbeats.unshift(new Date().toISOString());
+            if (heartbeats.length > MAX_HEARTBEATS) heartbeats.pop();
+            logger.info(`[HEARTBEAT] Self-ping successful at ${new Date().toLocaleTimeString()}`);
+        } catch (error) {
+            logger.error(`[HEARTBEAT] Self-ping failed: ${error.message}`);
+        }
+    }, HEARTBEAT_INTERVAL_MS);
 };
 
 // Start the heartbeat after a short delay
 setTimeout(startHeartbeat, 5000);
 
-// Shallow Health Check (Bypasses all middleware)
-app.get("/api/health", (req, res) => res.status(200).send("OK"));
-
 // Visual "Proof of Life" Dashboard
-app.get("/", (req, res) => {
-    const uptime = Math.floor((Date.now() - startTime) / 1000);
-    const h = Math.floor(uptime / 3600);
-    const m = Math.floor((uptime % 3600) / 60);
-    const s = uptime % 60;
-    const uptimeStr = `${h}h ${m}m ${s}s`;
+const addStatusPage = (app) =>
+    app.get("/", (req, res) => {
+        const uptime = Math.floor((Date.now() - startTime) / 1000);
+        const h = Math.floor(uptime / 3600);
+        const m = Math.floor((uptime % 3600) / 60);
+        const s = uptime % 60;
+        const uptimeStr = `${h}h ${m}m ${s}s`;
 
-    res.status(200).send(`
+        res.status(200).send(`
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -112,8 +106,9 @@ app.get("/", (req, res) => {
     </body>
     </html>
     `);
-});
+    });
 
+const app = createApp({ addPublicRoutes: addStatusPage, getPort: () => activePort });
 const server = http.createServer(app);
 
 // Initialize Services
@@ -127,83 +122,25 @@ const handleExit = (signal) => {
         logger.info("[PROCESS] Server closed. Exiting process.");
         process.exit(0);
     });
+    // Open websockets and keep-alive connections would hold close() open until the host kills the process
+    server.closeAllConnections?.();
+    setTimeout(() => process.exit(0), 10000).unref();
 };
 process.on("SIGINT", () => handleExit("SIGINT"));
 process.on("SIGTERM", () => handleExit("SIGTERM"));
 process.on("uncaughtException", (err) => {
     logger.error("[CRITICAL] Uncaught Exception:", err);
-    // In production, log error and restart
-    process.exit(1);
+    captureException(err);
+    // Give Sentry a moment to send the report, then exit so the host restarts the process
+    setTimeout(() => process.exit(1), 1000);
 });
 process.on("unhandledRejection", (reason) => {
     logger.error("[CRITICAL] Unhandled Rejection:", reason);
-    process.exit(1);
+    captureException(reason);
+    setTimeout(() => process.exit(1), 1000);
 });
 
-// 3. Security & Logging Middleware
-app.use(
-    helmet({
-        contentSecurityPolicy: false, // Managed manually below for dynamic backendPort
-    }),
-);
-app.use(morgan(config.isProduction ? "combined" : "dev")); // HTTP request logging
-
-// 4. Rate Limiting
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 1000, // Limit each IP to 1000 requests per window
-    message: "Too many requests from this IP, please try again later.",
-});
-app.use("/api/", limiter); // Apply to all API routes
-
-// 5. CORS Configuration
-const allowedOrigins = config.frontendOrigins;
-app.use(
-    cors({
-        origin: (origin, cb) => {
-            if (!origin || allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
-                return cb(null, true);
-            }
-            // Dynamically allow any local development port
-            if (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:")) {
-                return cb(null, true);
-            }
-            logger.warn(`[CORS] Rejected origin: ${origin}`);
-            return cb(null, false);
-        },
-        credentials: true,
-        methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    }),
-);
-
-app.use(cookieParser());
-app.use(express.json({ limit: "20mb" }));
-app.use(express.urlencoded({ limit: "20mb", extended: true }));
-
-// 6. Dynamic Content Security Policy (CSP)
-app.use((req, res, next) => {
-    const backendPort = activePort;
-    // Build connect-src dynamically from allowedOrigins
-    const originsStr = allowedOrigins.join(" ");
-    const connectSrc = `connect-src 'self' ${originsStr} http://localhost:${backendPort} http://localhost:8000 https://accounts.google.com https://openidconnect.googleapis.com/v1/userinfo;`;
-
-    // Set CSP (helmet sets defaults, we override specific ones)
-    res.setHeader(
-        "Content-Security-Policy",
-        `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://lh3.googleusercontent.com https://res.cloudinary.com; ${connectSrc}`,
-    );
-    next();
-});
-
-// 7. The AI agent is reached only through authenticated routes (e.g. POST /aichat/stream).
-// There is deliberately no open /api/agent proxy: it let anyone spend the LLM quota and write chat history.
-
-// 8. Routes, then JSON 404s and the central error handler (both must come last)
-app.use("/", routes);
-app.use(notFound);
-app.use(errorHandler);
-
-// 9. Server Startup with Port Retry
+// 3. Server Startup with Port Retry
 const basePort = config.port;
 const maxRetries = config.portRetryCount;
 

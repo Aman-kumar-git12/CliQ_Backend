@@ -2,6 +2,7 @@ const axios = require("axios");
 const { prisma } = require("../../../prisma/prismaClient");
 const { listUserSelect, toListUser } = require("../auth/authUtils");
 const { extractHashtags, toHandle, HANDLE_EXPR, toObjectIdString } = require("../posts/contentUtils");
+const { isPlaceholderText } = require("../recommendations/constants");
 const { config } = require("../../config");
 const logger = require("../logger");
 
@@ -12,7 +13,6 @@ const KEYWORD_CANDIDATE_LIMIT = 200;
 const HASHTAG_SCAN_LIMIT = 500;
 const MAX_QUERY_TOKENS = 6;
 
-const PLACEHOLDER_VALUES = new Set(["", "****", "n/a", "na", "null", "undefined", "professional seeker"]);
 // Filler words in descriptive queries ("people who know React and ML") would
 // otherwise count as keyword hits; the semantic query still gets the full text.
 const STOPWORDS = new Set([
@@ -65,8 +65,21 @@ const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // Older user documents have no isBlocked field at all. Prisma can't match
 // "missing or false" on a required field (`isBlocked: false` and NOT both skip
 // them), so raw queries use `$ne: true` and Prisma queries exclude blocked ids.
-const getBlockedUserIds = async () =>
-    (await prisma.users.findMany({ where: { isBlocked: true }, select: { id: true } })).map((u) => u.id);
+// One search reads this for posts and hashtags at once; a short memo makes that one query
+const BLOCKED_IDS_TTL_MS = 10 * 1000;
+let blockedIdsMemo = { expiresAt: 0, promise: null };
+const getBlockedUserIds = () => {
+    if (blockedIdsMemo.promise && blockedIdsMemo.expiresAt > Date.now()) return blockedIdsMemo.promise;
+    const promise = prisma.users
+        .findMany({ where: { isBlocked: true }, select: { id: true } })
+        .then((users) => users.map((u) => u.id));
+    blockedIdsMemo = { expiresAt: Date.now() + BLOCKED_IDS_TTL_MS, promise };
+    // A failed read isn't remembered
+    promise.catch(() => {
+        if (blockedIdsMemo.promise === promise) blockedIdsMemo = { expiresAt: 0, promise: null };
+    });
+    return promise;
+};
 
 // Tokens must start at a word boundary ("react" hits "React.js", not "preact").
 // In profile text, short tokens such as "ml"/"ai" must also be whole words so
@@ -77,19 +90,21 @@ const buildTokenPattern = (token, { prefix = false } = {}) => {
     const end = !prefix && token.length <= SHORT_TOKEN_LENGTH ? "(?=$|[^\\p{L}\\p{M}\\p{N}])" : "";
     return `(?:^|[^\\p{L}\\p{M}\\p{N}])${escapeRegex(token)}${end}`;
 };
+// Compiled patterns are reused across searches; tokens come from users, so the cache is bounded
+const MAX_TOKEN_MATCHERS = 1000;
 const tokenMatchers = new Map();
 const matchesToken = (text, token, options = {}) => {
     const key = `${options.prefix ? "p" : "w"}:${token}`;
-    if (!tokenMatchers.has(key)) tokenMatchers.set(key, new RegExp(buildTokenPattern(token, options), "iu"));
-    return tokenMatchers.get(key).test(text);
+    let matcher = tokenMatchers.get(key);
+    if (!matcher) {
+        if (tokenMatchers.size >= MAX_TOKEN_MATCHERS) tokenMatchers.delete(tokenMatchers.keys().next().value);
+        matcher = new RegExp(buildTokenPattern(token, options), "iu");
+        tokenMatchers.set(key, matcher);
+    }
+    return matcher.test(text);
 };
 
-const isMeaningful = (value) =>
-    !PLACEHOLDER_VALUES.has(
-        String(value ?? "")
-            .trim()
-            .toLowerCase(),
-    );
+const isMeaningful = (value) => !isPlaceholderText(value);
 
 const toTextList = (value) => {
     const items = Array.isArray(value) ? value : String(value ?? "").split(/[,|\n;]+/);
@@ -213,6 +228,11 @@ const scoreKeywordMatch = (user, tokens, fullText) => {
 
 let semanticCandidateCache = { expiresAt: 0, users: [] };
 
+// After the agent fails (asleep on Render, restarting), searches skip it for a while instead of each one
+// waiting for the timeout; keyword results come back at once and semantic.available says why
+const SEMANTIC_COOLDOWN_MS = 60 * 1000;
+let semanticUnavailableUntil = 0;
+
 const getSemanticCandidates = async () => {
     if (semanticCandidateCache.expiresAt > Date.now()) return semanticCandidateCache.users;
 
@@ -235,6 +255,7 @@ const getSemanticCandidates = async () => {
  * back to keyword results only.
  */
 const runSemanticPeopleSearch = async (text, currentUserId, limit) => {
+    if (Date.now() < semanticUnavailableUntil) return null;
     const candidates = (await getSemanticCandidates()).filter((u) => u.id !== currentUserId);
     if (candidates.length === 0) return [];
 
@@ -247,7 +268,8 @@ const runSemanticPeopleSearch = async (text, currentUserId, limit) => {
         );
         return Array.isArray(response.data?.results) ? response.data.results : [];
     } catch (err) {
-        logger.warn(`[SEARCH] Semantic search unavailable: ${err.message}`);
+        semanticUnavailableUntil = Date.now() + SEMANTIC_COOLDOWN_MS;
+        logger.warn(`[SEARCH] Semantic search unavailable for the next minute: ${err.message}`);
         return null;
     }
 };

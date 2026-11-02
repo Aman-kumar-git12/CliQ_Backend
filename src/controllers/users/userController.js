@@ -107,52 +107,48 @@ const unfriend = async (req, res) => {
     res.json({ message: "Connection removed successfully" });
 };
 
+// Errors reach the error handler (500 without internals) instead of a 400 that echoed the database error
 const getFeed = async (req, res) => {
-    try {
-        const page = parseInt(req.query.page) || 1;
-        let limit = parseInt(req.query.limit) || 10;
-        limit = limit > 50 ? 50 : limit;
-        const skip = (page - 1) * limit;
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 50);
+    const skip = (page - 1) * limit;
 
-        const loggedInUser = req.user;
+    const loggedInUser = req.user;
 
-        const connectionRequests = await prisma.connectionsRequest.findMany({
-            where: {
-                OR: [{ fromUserId: loggedInUser.id }, { toUserId: loggedInUser.id }],
+    const connectionRequests = await prisma.connectionsRequest.findMany({
+        where: {
+            OR: [{ fromUserId: loggedInUser.id }, { toUserId: loggedInUser.id }],
+        },
+        select: {
+            fromUserId: true,
+            toUserId: true,
+        },
+    });
+
+    const hideUserFromFeed = new Set();
+    connectionRequests.forEach((request) => {
+        hideUserFromFeed.add(request.fromUserId);
+        hideUserFromFeed.add(request.toUserId);
+    });
+    hideUserFromFeed.add(loggedInUser.id);
+
+    const users = await prisma.users.findMany({
+        where: {
+            id: {
+                notIn: Array.from(hideUserFromFeed),
             },
-            select: {
-                fromUserId: true,
-                toUserId: true,
-            },
-        });
+        },
+        select: {
+            id: true,
+            firstname: true,
+            lastname: true,
+            age: true,
+        },
+        skip: skip,
+        take: limit,
+    });
 
-        const hideUserFromFeed = new Set();
-        connectionRequests.forEach((req) => {
-            hideUserFromFeed.add(req.fromUserId);
-            hideUserFromFeed.add(req.toUserId);
-        });
-        hideUserFromFeed.add(loggedInUser.id);
-
-        const users = await prisma.users.findMany({
-            where: {
-                id: {
-                    notIn: Array.from(hideUserFromFeed),
-                },
-            },
-            select: {
-                id: true,
-                firstname: true,
-                lastname: true,
-                age: true,
-            },
-            skip: skip,
-            take: limit,
-        });
-
-        res.json({ data: users });
-    } catch (err) {
-        res.status(400).json({ message: "Error: " + err.message });
-    }
+    res.json({ data: users });
 };
 
 const getPublicUserConnections = async (req, res) => {

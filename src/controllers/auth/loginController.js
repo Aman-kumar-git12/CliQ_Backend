@@ -1,9 +1,8 @@
 const { prisma } = require("../../../prisma/prismaClient");
 const bcrypt = require("bcrypt");
 const { safeUserSelect, toSafeUser } = require("../../utils/auth/authUtils");
-const { normalizeEmail, createAuthToken, setAuthCookie } = require("./authHelpers");
+const { startSession, rotateSession, endSession } = require("./authHelpers");
 const { primeRecommendationFeedForUser } = require("../recommendations");
-const { config } = require("../../config");
 const logger = require("../../utils/logger");
 
 const getMe = async (req, res) => {
@@ -25,8 +24,7 @@ const getMe = async (req, res) => {
 
 const login = async (req, res) => {
     try {
-        const email = normalizeEmail(req.body?.email);
-        const { password } = req.body;
+        const { email, password } = req.body;
 
         const user = await prisma.users.findUnique({
             where: { email },
@@ -55,8 +53,8 @@ const login = async (req, res) => {
             });
         }
 
-        const token = createAuthToken(user);
-        setAuthCookie(res, token);
+        await prisma.users.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+        await startSession(res, user);
         primeRecommendationFeedForUser(user.id, user.expertise);
 
         return res.send({ message: "Login successful", user: toSafeUser(user) });
@@ -68,14 +66,15 @@ const login = async (req, res) => {
     }
 };
 
-const logout = (req, res) => {
-    res.clearCookie("auth_token", {
-        httpOnly: true,
-        secure: config.isProduction,
-        sameSite: config.isProduction ? "none" : "lax",
-    });
+// Renews the access cookie from the refresh cookie; the browser calls this when a request gets TOKEN_EXPIRED
+const refresh = async (req, res) => {
+    const user = await rotateSession(req, res);
+    return res.json({ message: "Session renewed", user: toSafeUser(user) });
+};
 
+const logout = async (req, res) => {
+    await endSession(req, res);
     res.json({ message: "Logout successful" });
 };
 
-module.exports = { getMe, login, logout };
+module.exports = { getMe, login, refresh, logout };

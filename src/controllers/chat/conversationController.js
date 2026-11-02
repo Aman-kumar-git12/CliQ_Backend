@@ -1,35 +1,46 @@
 const { prisma } = require("../../../prisma/prismaClient");
 
+const userCardSelect = { id: true, firstname: true, lastname: true, imageUrl: true };
+
+// The newest message this user can still see in a conversation
+const findLastVisibleMessage = (conversationId, userId) =>
+    prisma.message.findFirst({
+        where: { conversationId, isDelete: false, NOT: { deletedById: { has: userId } } },
+        orderBy: { createdAt: "desc" },
+        select: { text: true, image: true, file: true, createdAt: true },
+    });
+
 const getConversations = async (req, res) => {
     const loggedInUserId = req.user.id;
 
-    const conversations = await prisma.conversation.findMany({
-        where: { participantIds: { has: loggedInUserId } },
-        include: {
-            participants: {
-                select: { id: true, firstname: true, lastname: true, imageUrl: true },
+    // A nested `messages: { take: 1 }` include would load every message of every conversation and trim
+    // them in memory, so the last message is read per conversation instead (one indexed row each, in parallel)
+    const [conversationRows, connections] = await Promise.all([
+        prisma.conversation.findMany({
+            where: { participantIds: { has: loggedInUserId } },
+            select: { id: true, updatedAt: true, participants: { select: userCardSelect } },
+            orderBy: { updatedAt: "desc" },
+        }),
+        prisma.connectionsRequest.findMany({
+            where: {
+                status: "accepted",
+                OR: [{ fromUserId: loggedInUserId }, { toUserId: loggedInUserId }],
             },
-            messages: {
-                where: {
-                    AND: [{ NOT: { deletedById: { has: loggedInUserId } } }, { isDelete: false }],
-                },
-                orderBy: { createdAt: "desc" },
-                take: 1,
+            select: {
+                fromUserId: true,
+                updatedAt: true,
+                fromUser: { select: userCardSelect },
+                toUser: { select: userCardSelect },
             },
-        },
-        orderBy: { updatedAt: "desc" },
-    });
-
-    const connections = await prisma.connectionsRequest.findMany({
-        where: {
-            status: "accepted",
-            OR: [{ fromUserId: loggedInUserId }, { toUserId: loggedInUserId }],
-        },
-        include: {
-            fromUser: { select: { id: true, firstname: true, lastname: true, imageUrl: true } },
-            toUser: { select: { id: true, firstname: true, lastname: true, imageUrl: true } },
-        },
-    });
+        }),
+    ]);
+    const lastMessages = await Promise.all(
+        conversationRows.map((conv) => findLastVisibleMessage(conv.id, loggedInUserId)),
+    );
+    const conversations = conversationRows.map((conv, i) => ({
+        ...conv,
+        messages: lastMessages[i] ? [lastMessages[i]] : [],
+    }));
 
     const existingChatUserIds = new Set();
     const formattedConversations = conversations.map((conv) => {
@@ -76,6 +87,9 @@ const getConversations = async (req, res) => {
     res.json(formattedConversations);
 };
 
+// Messages deleted for everyone keep their row (so replies still point somewhere) but nothing of their content
+const DELETED_TEXT = "This message is deleted";
+
 const getChatHistory = async (req, res) => {
     const userId = req.user.id;
     const targetuserId = req.params.targetuserId;
@@ -85,6 +99,7 @@ const getChatHistory = async (req, res) => {
             isGroup: false,
             participantIds: { hasEvery: [userId, targetuserId] },
         },
+        select: { id: true },
     });
 
     if (!conversation) return res.json([]);
@@ -97,19 +112,20 @@ const getChatHistory = async (req, res) => {
         orderBy: { createdAt: "asc" },
         include: {
             parentMessage: {
-                include: { sender: { select: { firstname: true } } },
+                select: { id: true, text: true, isDelete: true, sender: { select: { firstname: true } } },
             },
         },
     });
 
-    const formatted = messages.map((msg) => ({
+    // deletedById lists who hid the message; that's nobody else's business
+    const formatted = messages.map(({ deletedById: _hiddenBy, ...msg }) => ({
         ...msg,
-        text: msg.isDelete ? "This message is deleted" : msg.text,
+        ...(msg.isDelete ? { text: DELETED_TEXT, image: null, file: null, originalName: null } : {}),
         isMe: msg.senderId === userId,
         parentMessage: msg.parentMessage
             ? {
                   id: msg.parentMessage.id,
-                  text: msg.parentMessage.text,
+                  text: msg.parentMessage.isDelete ? DELETED_TEXT : msg.parentMessage.text,
                   firstname: msg.parentMessage.sender.firstname,
               }
             : null,

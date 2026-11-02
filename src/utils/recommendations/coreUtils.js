@@ -1,4 +1,4 @@
-const { PLACEHOLDER_VALUES } = require("./constants");
+const { isPlaceholderText } = require("./constants");
 
 const normalizeText = (value) => {
     if (value === null || value === undefined) return "";
@@ -8,7 +8,7 @@ const normalizeText = (value) => {
 const isMeaningfulText = (value) => {
     const normalized = normalizeText(value);
     if (!normalized) return false;
-    return !PLACEHOLDER_VALUES.has(normalized.toLowerCase());
+    return !isPlaceholderText(normalized);
 };
 
 const normalizeTerms = (value) => {

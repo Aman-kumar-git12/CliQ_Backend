@@ -27,7 +27,14 @@ const errorHandler = (err, req, res, next) => {
 
     // Server errors never expose internals; client errors (bad JSON, too large) explain themselves
     const message = status >= 500 ? "Something went wrong on our side. Please try again." : err.message;
-    res.status(status).json({ message, ...(config.isDevelopment && status >= 500 ? { stack: err.stack } : {}) });
+    // A machine-readable code (e.g. TOKEN_EXPIRED, OTP_LOCKED) lets the frontend react without parsing text
+    const code = status < 500 && typeof err.code === "string" && /^[A-Z_]+$/.test(err.code) ? err.code : undefined;
+    res.status(status).json({
+        message,
+        ...(code ? { code } : {}),
+        ...(err.details && status < 500 ? { errors: err.details } : {}),
+        ...(config.isDevelopment && status >= 500 ? { stack: err.stack } : {}),
+    });
 };
 
 module.exports = { notFound, errorHandler };

@@ -1,4 +1,5 @@
 const axios = require("axios");
+const { pipeline } = require("stream/promises");
 const { prisma } = require("../../../prisma/prismaClient");
 const { config } = require("../../config");
 const logger = require("../../utils/logger");
@@ -120,6 +121,14 @@ const normalizeAssistantTone = (value = "") => {
         .toLowerCase();
     return ALLOWED_TONES.has(tone) ? tone : "polite";
 };
+// The agent's emoji styles for reply suggestions (WebsiteAgent message_assistant EMOJI_INSTRUCTIONS)
+const EMOJI_PREFERENCES = new Set(["both", "with", "without"]);
+const normalizeEmojiPreference = (value) => {
+    const preference = String(value || "")
+        .trim()
+        .toLowerCase();
+    return EMOJI_PREFERENCES.has(preference) ? preference : "both";
+};
 const normalizeAssistantHistory = (history = []) =>
     (Array.isArray(history) ? history : [])
         .slice(-MAX_ASSISTANT_HISTORY_TURNS)
@@ -146,27 +155,51 @@ const applyAssistantSafetyPolicy = ({ requestedTone, userAge, targetAge }) => {
     return { tone, safetyNote: "" };
 };
 
+// Only failures that happen before the agent did any work are retried (it was restarting, or a proxy dropped
+// the connection). A timeout is never retried: that would double an already long wait.
 const shouldRetryAssistantError = (error) => {
-    if (!error) return false;
-    if (["ECONNABORTED", "ECONNRESET", "ECONNREFUSED", "ETIMEDOUT"].includes(error.code)) return true;
-    return Number(error?.response?.status) >= 500;
+    if (!error || error.code === "ERR_CANCELED") return false;
+    if (["ECONNRESET", "ECONNREFUSED"].includes(error.code)) return true;
+    return [502, 503].includes(Number(error?.response?.status));
 };
 
-const postToAssistantService = async (path, payload, { timeout, responseType } = {}) => {
+const isTimeout = (error) => error?.code === "ECONNABORTED" || error?.code === "ETIMEDOUT";
+
+// A short reason for the client; the full error (with the agent's address) only goes to the log
+const describeAgentError = (error, timeoutMs) => {
+    if (isTimeout(error)) return `timeout after ${timeoutMs}ms`;
+    if (error?.response?.status) return `agent responded with ${error.response.status}`;
+    return "agent unreachable";
+};
+
+// Aborts the agent call when the user closes the tab or cancels, instead of letting the LLM keep going
+const abortOnClientClose = (req, res) => {
+    const controller = new AbortController();
+    res.on("close", () => {
+        if (!res.writableEnded) controller.abort();
+    });
+    return controller.signal;
+};
+
+const RETRY_DELAY_MS = 300;
+
+const postToAssistantService = async (path, payload, { timeout, responseType, signal } = {}) => {
     let lastError = null;
 
     for (let attempt = 0; attempt <= ASSISTANT_RETRY_COUNT; attempt += 1) {
         try {
             return await axios.post(`${llmServiceUrl}${path}`, payload, {
                 timeout,
+                signal,
                 headers: config.agent.authHeaders,
                 ...(responseType ? { responseType } : {}),
             });
         } catch (error) {
             lastError = error;
-            if (attempt >= ASSISTANT_RETRY_COUNT || !shouldRetryAssistantError(error)) {
+            if (attempt >= ASSISTANT_RETRY_COUNT || !shouldRetryAssistantError(error) || signal?.aborted) {
                 throw error;
             }
+            await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
         }
     }
 
@@ -238,8 +271,9 @@ const getMessageAssistant = async (req, res) => {
                         [targetUser?.firstname, targetUser?.lastname].filter(Boolean).join(" ").trim() ||
                         "the other person",
                     max_suggestions: 5,
+                    emojiPreference: normalizeEmojiPreference(req.body?.emojiPreference),
                 },
-                { timeout: REPLY_TIMEOUT_MS },
+                { timeout: REPLY_TIMEOUT_MS, signal: abortOnClientClose(req, res) },
             );
 
             if (
@@ -264,9 +298,9 @@ const getMessageAssistant = async (req, res) => {
                 ...agentResponse.data,
             });
         } catch (agentError) {
-            const reason =
-                agentError.code === "ECONNABORTED" ? `timeout after ${REPLY_TIMEOUT_MS}ms` : agentError.message;
-            logger.error("Message assistant agent failed:", reason);
+            if (agentError.code === "ERR_CANCELED") return undefined; // the user left; nobody to answer
+            const reason = describeAgentError(agentError, REPLY_TIMEOUT_MS);
+            logger.error("Message assistant agent failed:", agentError.message);
             if (mode === "replies") {
                 return res.status(502).json({
                     message: "Reply generation is temporarily unavailable",
@@ -338,6 +372,7 @@ const streamMessageAssistant = async (req, res) => {
             targetAge: targetUser?.age,
         });
 
+        const signal = abortOnClientClose(req, res);
         const agentResponse = await postToAssistantService(
             `/api/message-ai/respond/stream`,
             {
@@ -354,15 +389,27 @@ const streamMessageAssistant = async (req, res) => {
             {
                 timeout: STREAM_TIMEOUT_MS,
                 responseType: "stream",
+                signal,
             },
         );
 
         res.setHeader("Content-Type", "text/plain; charset=utf-8");
         res.setHeader("Cache-Control", "no-cache");
-        agentResponse.data.pipe(res);
+        // pipeline (not pipe) handles the agent dropping mid-answer: an unhandled stream error would crash the
+        // server. If the client leaves, the abort above stops the agent's stream as well.
+        try {
+            await pipeline(agentResponse.data, res);
+        } catch (streamError) {
+            if (!signal.aborted) logger.error("Message assistant stream broke off:", streamError.message);
+            if (!res.writableEnded) res.end();
+        }
     } catch (error) {
-        const reason = error.code === "ECONNABORTED" ? `timeout after ${STREAM_TIMEOUT_MS}ms` : error.message;
-        logger.error("Message assistant stream failed:", reason);
+        if (error.code === "ERR_CANCELED") return; // the user left before the agent answered
+        logger.error("Message assistant stream failed:", describeAgentError(error, STREAM_TIMEOUT_MS), error.message);
+        if (res.headersSent) {
+            if (!res.writableEnded) res.end();
+            return;
+        }
         res.status(502).send("I could not answer from this chat right now. Please try again in a moment.");
     }
 };

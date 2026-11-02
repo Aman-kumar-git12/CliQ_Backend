@@ -33,7 +33,13 @@ module.exports = [
         },
     },
     {
-        files: ["src/config/**/*.js", "prisma/**/*.js", "eslint.config.js"],
+        files: ["tests/**/*.js"],
+        languageOptions: { globals: { ...globals.jest } },
+        // Tests set the environment the app is then loaded with
+        rules: { "no-restricted-properties": "off" },
+    },
+    {
+        files: ["src/config/**/*.js", "prisma/**/*.js", "eslint.config.js", "jest.config.js"],
         rules: { "no-restricted-properties": "off" },
     },
     {

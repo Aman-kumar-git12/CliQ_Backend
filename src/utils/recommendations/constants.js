@@ -47,6 +47,14 @@ const RECOMMENDATION_PREVIEW_SELECT = {
 
 const PLACEHOLDER_VALUES = new Set(["", "****", "professional seeker", "n/a", "na", "null", "undefined"]);
 
+// Empty profile fields are stored as runs of asterisks ("****" from the expertise form, "*******" from signup)
+const isPlaceholderText = (value) => {
+    const normalized = String(value ?? "")
+        .trim()
+        .toLowerCase();
+    return PLACEHOLDER_VALUES.has(normalized) || /^\*+$/.test(normalized);
+};
+
 module.exports = {
     parseNumber,
     MAX_FEEDBACK_EVENTS,
@@ -62,4 +70,5 @@ module.exports = {
     RECOMMENDATION_PREFERENCE_ACTIVE_STATUSES,
     RECOMMENDATION_PREVIEW_SELECT,
     PLACEHOLDER_VALUES,
+    isPlaceholderText,
 };

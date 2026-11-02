@@ -35,7 +35,6 @@ const getMatchingAgentPayload = (userExpertise = {}, historyProfile = null, cand
         lastname: candidate.lastname,
         age: candidate.age,
         imageUrl: candidate.imageUrl,
-        email: candidate.email,
         expertise: candidate.expertise || {},
     })),
 });
@@ -63,14 +62,19 @@ const rankCandidatesWithAgent = async ({ userExpertise, historyProfile, candidat
     return { rankedResults, strategy };
 };
 
-const refreshRecommendationCacheInBackground = ({ userId }) => {
-    if (!userId) return;
+// One background ranking per user at a time: repeated reads of a stale list don't start more
+const refreshesInFlight = new Map();
 
-    Promise.resolve()
+const refreshRecommendationCacheInBackground = ({ userId }) => {
+    if (!userId || refreshesInFlight.has(userId)) return;
+
+    const refresh = Promise.resolve()
         .then(() => warmRecommendationCacheForUser(userId))
         .catch((error) => {
             logger.error("Recommendation background refresh failed:", error.message);
-        });
+        })
+        .finally(() => refreshesInFlight.delete(userId));
+    refreshesInFlight.set(userId, refresh);
 };
 
 const prepareSmartRecommendationContext = async (loggedInUserId) => {
@@ -121,6 +125,8 @@ const prepareSmartRecommendationContext = async (loggedInUserId) => {
 const warmRecommendationCacheForUser = async (loggedInUserId) => {
     if (!loggedInUserId) return null;
 
+    // Changes marked after this moment aren't in the data read below; the saved list stays stale for them
+    const rankedFrom = new Date();
     try {
         logger.info(`[Warmup] Starting for user ${loggedInUserId}`);
         const context = await prepareSmartRecommendationContext(loggedInUserId);
@@ -156,7 +162,7 @@ const warmRecommendationCacheForUser = async (loggedInUserId) => {
         });
 
         const payload = getRecommendationCachePayload(users, strategy);
-        await setCachedRecommendationBatch(loggedInUserId, payload);
+        await setCachedRecommendationBatch(loggedInUserId, payload, undefined, { rankedFrom });
         return payload;
     } catch (error) {
         logger.error(`[Warmup] Failed for ${loggedInUserId}:`, error.message);

@@ -1,7 +1,5 @@
-const jwt = require("jsonwebtoken");
 const { prisma } = require("../../prisma/prismaClient");
-const { config } = require("../config");
-const { withoutSecrets, isTokenCurrent } = require("../utils/auth/authUtils");
+const { withoutSecrets, isTokenCurrent, verifyAuthToken } = require("../utils/auth/authUtils");
 
 const buildAuthError = (message, status = 401) => {
     const error = new Error(message);
@@ -15,7 +13,7 @@ const getAuthenticatedUser = async (req) => {
         throw buildAuthError("You are Unauthorized, Please Login...", 401);
     }
 
-    const decodedObj = jwt.verify(token, config.jwtSecret);
+    const decodedObj = verifyAuthToken(token);
     const { userId } = decodedObj;
 
     const user = await prisma.users.findUnique({
@@ -37,6 +35,7 @@ const getAuthenticatedUser = async (req) => {
 const handleAuthError = (res, err) => {
     res.status(err.status || 401).json({
         message: err.message || "Authentication Error",
+        ...(err.code === "TOKEN_EXPIRED" ? { code: "TOKEN_EXPIRED" } : {}),
     });
 };
 
@@ -53,6 +52,8 @@ const optionalUserAuth = async (req, res, next) => {
     try {
         req.user = await getAuthenticatedUser(req);
     } catch (err) {
+        // A signed-in browser whose access token ran out must renew it, not be treated as signed out
+        if (err.code === "TOKEN_EXPIRED") return handleAuthError(res, err);
         req.user = null;
     }
 

@@ -9,3 +9,4 @@ notes.md
 
 # OS
 .DS_Store
+tests/helpers/.mongo-uri

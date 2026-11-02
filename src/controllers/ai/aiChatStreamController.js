@@ -130,18 +130,25 @@ const appendAgentHistory = (sessionId, question, answer) =>
         method: "POST",
         headers: { "Content-Type": "application/json", ...config.agent.authHeaders },
         body: JSON.stringify({ sessionId, question, answer }),
+        signal: AbortSignal.timeout(config.agent.backgroundTimeoutMs),
     }).catch((error) => logger.error("Agent history append failed:", error.message));
 
 // Splits cached text into small word-sized tokens so it streams like a live answer
 const tokenize = (text) => text.match(/\S+\s*|\s+/g) || [];
 
+// Saves the question and tells whether it is the session's first one (only those use the shared answer cache).
+// The count runs before the insert, alongside the session update, so the three writes/reads take two round trips.
 const saveUserMessage = async (session, text) => {
     const data = { updatedAt: new Date() };
     if (session.title === "New Chat") {
         data.title = text.substring(0, 30) + (text.length > 30 ? "..." : "");
     }
-    await prisma.aIChatSession.update({ where: { id: session.id }, data });
-    return prisma.aIChatMessage.create({ data: { sessionId: session.id, role: "user", text } });
+    const [earlierQuestions] = await Promise.all([
+        prisma.aIChatMessage.count({ where: { sessionId: session.id, role: "user" } }),
+        prisma.aIChatSession.update({ where: { id: session.id }, data }),
+    ]);
+    await prisma.aIChatMessage.create({ data: { sessionId: session.id, role: "user", text } });
+    return { isFirstQuestion: earlierQuestions === 0 };
 };
 
 // ---------- POST /aichat/stream ----------
@@ -183,9 +190,7 @@ const streamChat = async (req, res) => {
                 where: { sessionId, role: "ai", createdAt: { gt: lastUser.createdAt } },
             });
         } else {
-            await saveUserMessage(session, message);
-            const userMessageCount = await prisma.aIChatMessage.count({ where: { sessionId, role: "user" } });
-            isFirstQuestion = userMessageCount === 1;
+            ({ isFirstQuestion } = await saveUserMessage(session, message));
         }
     } catch (error) {
         logger.error("AI chat stream setup failed:", error);
@@ -209,6 +214,13 @@ const streamChat = async (req, res) => {
             upstream.abort();
         }
     });
+    // The agent must start answering, and then keep sending, within the idle limit; a sleeping or stuck agent
+    // otherwise leaves the user looking at a spinner forever. Every event received resets the timer.
+    let idleTimer = null;
+    const resetIdleTimer = () => {
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => upstream.abort(), config.agent.chatIdleTimeoutMs);
+    };
 
     const cacheKey = isFirstQuestion ? await buildCacheKey(message) : null;
     let answer = "";
@@ -228,6 +240,7 @@ const streamChat = async (req, res) => {
             appendAgentHistory(sessionId, message, answer);
         } else {
             const userContext = await buildUserContext(req.user);
+            resetIdleTimer();
             const response = await fetch(`${llmServiceUrl}/api/chat/stream`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", ...config.agent.authHeaders },
@@ -237,6 +250,7 @@ const streamChat = async (req, res) => {
             if (!response.ok || !response.body) throw new Error(`Agent responded with ${response.status}`);
 
             for await (const { event, data } of readSseEvents(response.body)) {
+                resetIdleTimer();
                 if (event === "token") {
                     answer += data.text || "";
                     writeEvent(res, "token", data);
@@ -253,7 +267,7 @@ const streamChat = async (req, res) => {
         }
     } catch (error) {
         if (!clientGone) {
-            errorCode = errorCode || "agent_unreachable";
+            errorCode = errorCode || (upstream.signal.aborted ? "agent_timeout" : "agent_unreachable");
             logger.error("AI chat stream failed:", error.message);
             // The agent itself is down or broke mid-answer, so say that instead of a generic error
             const offline = /[ऀ-ॿ]/.test(message) ? AGENT_OFFLINE_HINDI : AGENT_OFFLINE;
@@ -263,6 +277,8 @@ const streamChat = async (req, res) => {
             writeEvent(res, "error", { code: errorCode, kind: "unreachable", retryAfter: null, message: offline });
         }
     }
+
+    clearTimeout(idleTimer);
 
     let savedMessage = null;
     if (answer) {
@@ -281,6 +297,13 @@ const streamChat = async (req, res) => {
         }
     }
 
+    if (!clientGone) {
+        if (suggestions.length) writeEvent(res, "suggestions", { items: suggestions });
+        writeEvent(res, "done", { messageId: savedMessage?.id || null, cached });
+        res.end();
+    }
+
+    // After the response: the user doesn't wait for the cache write
     if (!cached && !clientGone && !errorCode && isFirstQuestion && agentMeta.cacheable && answer) {
         await writeCache(cacheKey, {
             answer,
@@ -288,12 +311,6 @@ const streamChat = async (req, res) => {
             sources: agentMeta.sources || [],
             language: agentMeta.language,
         });
-    }
-
-    if (!clientGone) {
-        if (suggestions.length) writeEvent(res, "suggestions", { items: suggestions });
-        writeEvent(res, "done", { messageId: savedMessage?.id || null, cached });
-        res.end();
     }
 
     // Cache hits never reach the agent, so the backend logs them in the same JSON shape
@@ -330,6 +347,7 @@ const forwardFeedback = (message, feedback, userId) => {
             sources: Array.isArray(meta.sources) ? meta.sources : [],
             cacheable: Boolean(meta.cacheable),
         }),
+        signal: AbortSignal.timeout(config.agent.backgroundTimeoutMs),
     })
         .then((response) => {
             if (!response.ok) logger.error("Agent rejected feedback:", response.status);

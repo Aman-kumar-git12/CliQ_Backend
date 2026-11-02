@@ -1,3 +1,6 @@
+const jwt = require("jsonwebtoken");
+const { config } = require("../../config");
+
 const safeUserSelect = {
     id: true,
     firstname: true,
@@ -31,6 +34,27 @@ const { email: _email, ...listUserSelect } = publicUserSelect;
 
 // Tokens issued before tokenVersion existed have no "tv" and count as version 0
 const isTokenCurrent = (decodedToken, user) => (decodedToken.tv ?? 0) === (user.tokenVersion ?? 0);
+
+// Checks an access token against the current secret, then the previous one while it is being rotated.
+// An expired token gets code TOKEN_EXPIRED, which tells the browser to renew it through POST /auth/refresh.
+const verifyAuthToken = (token) => {
+    const secrets = [config.jwtSecret, config.jwtPreviousSecret].filter(Boolean);
+    let lastError;
+    for (const secret of secrets) {
+        try {
+            return jwt.verify(token, secret);
+        } catch (err) {
+            lastError = err;
+            if (err.name === "TokenExpiredError") break;
+        }
+    }
+    const error = new Error(
+        lastError?.name === "TokenExpiredError" ? "Your session needs renewing." : "Invalid session. Please log in.",
+    );
+    error.status = 401;
+    if (lastError?.name === "TokenExpiredError") error.code = "TOKEN_EXPIRED";
+    throw error;
+};
 
 // Fields that must never leave the server, even inside a full user record
 const SECRET_USER_FIELDS = ["password", "tokenVersion", "googleId", "blockedReason"];
@@ -93,4 +117,5 @@ module.exports = {
     toListUser,
     withoutSecrets,
     isTokenCurrent,
+    verifyAuthToken,
 };

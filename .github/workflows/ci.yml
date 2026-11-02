@@ -1,0 +1,54 @@
+# Lint, format check and tests on every push and pull request; then the Docker image must build.
+# Tests use a throwaway in-memory MongoDB, so no secrets or real database are needed here.
+name: CI
+
+on:
+    push:
+    pull_request:
+
+jobs:
+    test:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v5
+            - uses: actions/setup-node@v5
+              with:
+                  node-version: 22
+                  cache: npm
+            - run: npm ci
+            - name: Cache the MongoDB test binary
+              uses: actions/cache@v4
+              with:
+                  path: ~/.cache/mongodb-binaries
+                  key: mongodb-binaries-${{ runner.os }}
+            - run: npm run lint
+            - run: npm run format:check
+            - run: npm test
+
+    docker:
+        needs: test
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v5
+            - uses: docker/setup-buildx-action@v3
+            - uses: docker/build-push-action@v6
+              with:
+                  context: .
+                  push: false
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max
+
+    # Deploys main to Render once the checks pass. Needs the repository secret RENDER_DEPLOY_HOOK_URL
+    # (Render dashboard > service > Settings > Deploy Hook) and Render's own auto-deploy turned off;
+    # without the secret this job is skipped.
+    deploy:
+        needs: [test, docker]
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        runs-on: ubuntu-latest
+        environment: production
+        env:
+            DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        steps:
+            - name: Trigger the Render deploy
+              if: env.DEPLOY_HOOK != ''
+              run: curl --fail --silent --show-error -X POST "$DEPLOY_HOOK"

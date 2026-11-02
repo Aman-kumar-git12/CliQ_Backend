@@ -1,0 +1,68 @@
+# The whole stack on one machine: MongoDB, Redis, the AI agent, this API and the frontend.
+# Expects the three repos side by side, as in this workspace:
+#   WebsiteBackend/   (this file)   WebsiteAgent/   website_Dev/vite-project/
+# Start:  docker compose up --build      Site: http://localhost:5173   API: http://localhost:2004
+#
+# It uses its own local database, never the production one: DATABASE_URL from .env is overridden.
+# Fill WebsiteBackend/.env and WebsiteAgent/.env first (copy their .env.example files).
+# The help chatbot's knowledge search needs MongoDB Atlas vector search, so locally it answers
+# without retrieved context; everything else works.
+name: cliq
+
+services:
+    mongo:
+        image: mongo:8
+        command: ["--replSet", "rs0", "--bind_ip_all"]
+        ports: ["27018:27017"]
+        volumes: [mongo-data:/data/db]
+        # Prisma needs a replica set; this turns the single node into one on first start
+        healthcheck:
+            test:
+                - CMD
+                - mongosh
+                - --quiet
+                - --eval
+                - "try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongo:27017' }] }).ok }"
+            interval: 5s
+            timeout: 10s
+            retries: 20
+
+    redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+
+    agent:
+        build: ../WebsiteAgent
+        env_file: ../WebsiteAgent/.env
+        environment:
+            DATABASE_URL: mongodb://mongo:27017/cliq_local?replicaSet=rs0
+        ports: ["8000:8000"]
+        depends_on:
+            mongo: { condition: service_healthy }
+
+    backend:
+        build: .
+        env_file: .env
+        environment:
+            NODE_ENV: development
+            DATABASE_URL: mongodb://mongo:27017/cliq_local?replicaSet=rs0
+            REDIS_URL: redis://redis:6379
+            LLM_SERVICE_URL: http://agent:8000
+            FRONTEND_URL: http://localhost:5173
+            TRUST_PROXY: "0"
+        ports: ["2004:2004"]
+        depends_on:
+            mongo: { condition: service_healthy }
+            redis: { condition: service_started }
+            agent: { condition: service_started }
+
+    frontend:
+        build:
+            context: ../website_Dev/vite-project
+            args:
+                VITE_BACKEND_URL: http://localhost:2004
+        ports: ["5173:80"]
+        depends_on: [backend]
+
+volumes:
+    mongo-data:

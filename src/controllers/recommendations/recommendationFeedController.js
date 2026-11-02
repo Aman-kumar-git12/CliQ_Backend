@@ -90,18 +90,23 @@ const getSmartUsers = async (req, res) => {
     try {
         const loggedInUserId = req.user?.id;
         if (!loggedInUserId) {
-            return res.status(401).json({ message: "UserId missing in request" });
+            return res.status(401).json({ message: "Authentication required" });
         }
 
         const { excludeIds = [], refresh = "false" } = req.query;
         const isRefreshRequest = refresh === "true";
-        const excludeArray = Array.isArray(excludeIds) ? excludeIds : [excludeIds].filter(Boolean);
+        // Malformed ids would make the database query below fail with a 500
+        const excludeArray = (Array.isArray(excludeIds) ? excludeIds : [excludeIds]).filter(
+            (id) => typeof id === "string" && /^[0-9a-fA-F]{24}$/.test(id),
+        );
 
         logger.info(`[SmartUsers] Request from ${loggedInUserId}, excludeCount: ${excludeArray.length}`);
 
+        // Refresh shows a new sample of the current list straight away and re-ranks in the background;
+        // it never makes the user wait for ranking or the AI agent
         if (isRefreshRequest) {
             await invalidateRecommendationCache(loggedInUserId);
-            logger.info(`[SmartUsers] Cache invalidated for user ${loggedInUserId} (refresh requested)`);
+            logger.info(`[SmartUsers] Refresh requested by ${loggedInUserId}: re-ranking in the background`);
         }
 
         let [persistentExcludedIds, cachedBatch] = await Promise.all([
@@ -112,7 +117,11 @@ const getSmartUsers = async (req, res) => {
             `[SmartUsers] Exclusions: ${persistentExcludedIds.length}, Cache: ${cachedBatch?.users?.length || 0}`,
         );
 
-        if (!cachedBatch || !cachedBatch.users || cachedBatch.users.length === 0 || isRefreshRequest) {
+        if (cachedBatch?.isStale || isRefreshRequest) {
+            refreshRecommendationCacheInBackground({ userId: loggedInUserId });
+        }
+
+        if (!cachedBatch || !cachedBatch.users || cachedBatch.users.length === 0) {
             logger.info(`[SmartUsers] Cache miss for ${loggedInUserId}. Preparing fast seed batch...`);
 
             const seedCandidates = await getEligibleRecommendationCandidates(loggedInUserId, persistentExcludedIds, {
@@ -138,9 +147,18 @@ const getSmartUsers = async (req, res) => {
         }
 
         const validExcludedIds = [...excludeArray, ...persistentExcludedIds];
-        const refreshedUsers = selectRefreshUsers(cachedBatch?.users || [], validExcludedIds, {
+        let refreshedUsers = selectRefreshUsers(cachedBatch?.users || [], validExcludedIds, {
             limit: SMART_RECOMMENDATION_RESPONSE_SIZE,
         });
+
+        // Everyone in the list was already seen: show quick picks now; the background ranking fills the next list
+        if (refreshedUsers.length === 0 && cachedBatch?.users?.length > 0) {
+            refreshRecommendationCacheInBackground({ userId: loggedInUserId });
+            const seedCandidates = await getEligibleRecommendationCandidates(loggedInUserId, validExcludedIds, {
+                take: SMART_RECOMMENDATION_RESPONSE_SIZE,
+            });
+            refreshedUsers = buildSeedRecommendationBatch(seedCandidates, SMART_RECOMMENDATION_RESPONSE_SIZE);
+        }
 
         logger.info(`[SmartUsers] Smart Delivery Mode returning ${refreshedUsers.length} top candidates.`);
         res.json(refreshedUsers);

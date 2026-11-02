@@ -3,10 +3,12 @@ const searchRouter = express.Router();
 const searchController = require("../controllers/search/searchController");
 const { userAuth } = require("../middlewares/authMiddleware");
 const { validateObjectIdParam } = require("../middlewares/validationMiddleware");
+const { validate } = require("../middlewares/validate");
+const schemas = require("../validation/schemas");
 
 for (const name of ["id"]) searchRouter.param(name, validateObjectIdParam);
 
-searchRouter.get("/search", userAuth, searchController.globalSearch);
+searchRouter.get("/search", userAuth, validate({ query: schemas.searchQuery }), searchController.globalSearch);
 searchRouter.get("/search/trending-hashtags", userAuth, searchController.getTrendingHashtags);
 searchRouter.get("/user/mention-suggestions", userAuth, searchController.getMentionSuggestions);
 searchRouter.get("/user/search/suggested", userAuth, searchController.getSuggestedUsers);
